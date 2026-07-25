@@ -4,6 +4,7 @@ import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from colorama import Fore, Style
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 # Mutation payloads organized by category
@@ -283,7 +284,8 @@ def _test_method_confusion(session: ScanSession, baseline: dict) -> None:
                 verify=session.config.verify_ssl,
             )
             elapsed = time.time() - start
-        except Exception:
+        except Exception as e:
+            logger.debug("zero_day _test_method_confusion: request failed: %s", e)
             continue
 
         anomalies = []

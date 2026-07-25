@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession, build_curl
 
 
@@ -104,7 +105,8 @@ def _test_host_header_direct(session, url):
             verify=session.config.verify_ssl,
             allow_redirects=False,
         )
-    except Exception:
+    except Exception as e:
+        logger.debug("host_header _test_host_override: request failed: %s", e)
         return
 
     if not resp:
@@ -206,7 +208,8 @@ def _test_host_header_direct(session, url):
             verify=session.config.verify_ssl,
             allow_redirects=False,
         )
-    except Exception:
+    except Exception as e:
+        logger.debug("host_header _test_host_override: port injection request failed: %s", e)
         return
 
     if resp:
@@ -284,7 +287,8 @@ def _test_forwarded_headers(session, url):
                 verify=session.config.verify_ssl,
                 allow_redirects=False,
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("host_header _test_forwarded_headers: request failed: %s", e)
             continue
 
         if not resp:
@@ -412,7 +416,8 @@ def _test_password_reset_poisoning(session, form):
                 verify=session.config.verify_ssl,
                 allow_redirects=False,
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("host_header _test_password_reset_poisoning: request failed: %s", e)
             continue
 
         if not resp:
@@ -530,7 +535,8 @@ def _test_routing_ssrf(session, url):
                 verify=session.config.verify_ssl,
                 allow_redirects=False,
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("host_header _test_routing_ssrf: request failed: %s", e)
             continue
 
         if not resp:

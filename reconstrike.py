@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from colorama import Fore, Style, init as colorama_init
 
+from scanner.log import setup_logging, logger
 from scanner.core import ScanConfig, ScanSession, Severity
 from scanner.concurrent import ConcurrentCrawler
 from scanner.reporter import generate_html_report, print_summary
@@ -17,6 +18,7 @@ from scanner.api_scanner import scan_api_endpoints
 from scanner.waf_detect import detect_waf
 from scanner.tech_stack import analyze_tech_stack, print_tech_stack
 from scanner.pdf_report import generate_pdf_report
+from scanner import __version__ as VERSION
 from scanner.modules import (
     headers, ssl_check, sqli, xss, csrf, directory, info_disclosure,
     auth, misconfig, lfi, cmd_injection, ssti, ssrf, xxe, idor,
@@ -30,8 +32,6 @@ from scanner.modules import (
 )
 
 colorama_init()
-
-VERSION = "3.0"
 
 BANNER = f"""
 {Fore.RED}██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗{Fore.YELLOW}███████╗████████╗██████╗ ██╗██╗  ██╗███████╗
@@ -170,7 +170,8 @@ Examples:
 
     parser.add_argument("--auth-url", help="Login page URL for authenticated scanning")
     parser.add_argument("-u", "--username", help="Username for authenticated scanning")
-    parser.add_argument("-p", "--password", help="Password for authenticated scanning")
+    parser.add_argument("-p", "--password", help="Password for authenticated scanning (visible in process list; prefer --password-file)")
+    parser.add_argument("--password-file", help="Read password from file (more secure than --password)")
     parser.add_argument("--cookie", help="Custom cookie (format: name=value; name2=value2)")
     parser.add_argument("--header", action="append", help="Custom header (format: Name: Value)")
 
@@ -179,7 +180,7 @@ Examples:
     parser.add_argument("--scope-include", help="Regex pattern for URLs to include in scope")
     parser.add_argument("--scope-exclude", help="Regex pattern for URLs to exclude from scope")
     parser.add_argument("--no-ssl-verify", action="store_true", default=False, help="Skip SSL certificate verification")
-    parser.add_argument("--user-agent", default="ReconStrike/3.0 (Security Audit)", help="Custom User-Agent")
+    parser.add_argument("--user-agent", default=f"ReconStrike/{VERSION} (Security Audit)", help="Custom User-Agent")
 
     parser.add_argument("--pdf", help="Generate professional PDF report (e.g., --pdf report.pdf)")
     parser.add_argument("--json", dest="json_output", action="store_true", help="Output results as JSON to stdout")
@@ -192,6 +193,9 @@ Examples:
                         default="MEDIUM", help="Minimum severity to report in CI mode (default: MEDIUM)")
     parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output (findings only)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("--no-color", action="store_true", help="Disable colored output")
+    parser.add_argument("--log-file", help="Write log output to file")
+    parser.add_argument("--list-modules", action="store_true", help="List all available scan modules and exit")
     parser.add_argument("--version", action="version", version=f"ReconStrike v{VERSION}")
 
     return parser.parse_args()
@@ -222,8 +226,8 @@ def _resolve_modules(args) -> list[str]:
 
     invalid = [m for m in selected if m not in ALL_MODULES]
     if invalid:
-        print(f"{Fore.RED}[!] Unknown modules: {', '.join(invalid)}{Style.RESET_ALL}")
-        print(f"    Available: {', '.join(ALL_MODULES.keys())}")
+        logger.error("Unknown modules: %s", ", ".join(invalid))
+        logger.error("Available: %s", ", ".join(ALL_MODULES.keys()))
         sys.exit(1)
 
     return selected, depth_override
@@ -337,6 +341,32 @@ class ProgressTracker:
 def main():
     args = parse_args()
 
+    setup_logging(
+        verbose=args.verbose,
+        quiet=args.quiet,
+        no_color=args.no_color,
+        log_file=args.log_file,
+    )
+
+    if args.no_color:
+        colorama_init(strip=True)
+        os.environ["NO_COLOR"] = "1"
+
+    if args.list_modules:
+        print(f"ReconStrike v{VERSION} - Available Scan Modules:\n")
+        for key, (description, _) in ALL_MODULES.items():
+            print(f"  {key:24s} {description}")
+        print(f"\nTotal: {len(ALL_MODULES)} modules")
+        sys.exit(0)
+
+    if args.password_file:
+        with open(args.password_file) as f:
+            args.password = f.read().strip()
+    elif args.password:
+        logger.warning("--password is visible in process list. Use --password-file or set RECONSTRIKE_PASSWORD env var.")
+    elif os.environ.get("RECONSTRIKE_PASSWORD"):
+        args.password = os.environ["RECONSTRIKE_PASSWORD"]
+
     original_stdout = sys.stdout
     if args.json_output:
         sys.stdout = sys.stderr
@@ -354,7 +384,7 @@ def main():
         print(BANNER)
 
     if not args.target and not args.sast_dir:
-        print(f"{Fore.RED}[!] You must provide either --target (DAST) or --sast-dir (SAST) or both.{Style.RESET_ALL}")
+        logger.error("You must provide either --target (DAST) or --sast-dir (SAST) or both.")
         sys.exit(1)
 
     if args.target:
@@ -364,7 +394,7 @@ def main():
 
         parsed = urlparse(target)
         if not parsed.netloc:
-            print(f"{Fore.RED}[!] Invalid target URL: {target}{Style.RESET_ALL}")
+            logger.error("Invalid target URL: %s", target)
             sys.exit(1)
     else:
         target = ""
@@ -413,43 +443,43 @@ def main():
 
     if not args.quiet:
         profile_name = args.profile or ("deep" if args.deep else "standard")
-        print(f"{Fore.CYAN}[*] Target     : {target}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}[*] Profile    : {profile_name}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}[*] Depth      : {depth}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}[*] Modules    : {len(selected_modules)} ({', '.join(selected_modules[:5])}{'...' if len(selected_modules) > 5 else ''}){Style.RESET_ALL}")
-        print(f"{Fore.CYAN}[*] Threads    : {args.threads}{Style.RESET_ALL}")
+        logger.info("Target     : %s", target)
+        logger.info("Profile    : %s", profile_name)
+        logger.info("Depth      : %s", depth)
+        logger.info("Modules    : %d (%s%s)", len(selected_modules), ", ".join(selected_modules[:5]), "..." if len(selected_modules) > 5 else "")
+        logger.info("Threads    : %s", args.threads)
         if args.proxy:
-            print(f"{Fore.CYAN}[*] Proxy      : {args.proxy}{Style.RESET_ALL}")
+            logger.info("Proxy      : %s", args.proxy)
         if args.rate_limit:
-            print(f"{Fore.CYAN}[*] Rate Limit : {args.rate_limit} req/s{Style.RESET_ALL}")
+            logger.info("Rate Limit : %s req/s", args.rate_limit)
 
     if args.target:
         resp = session.get(target)
         if not resp:
-            print(f"\n{Fore.RED}[!] Cannot reach target: {target}{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}    Check the URL and network connectivity.{Style.RESET_ALL}")
+            logger.error("Cannot reach target: %s", target)
+            logger.warning("Check the URL and network connectivity.")
             sys.exit(1)
 
         if not args.quiet:
-            print(f"{Fore.GREEN}[+] Target is reachable (HTTP {resp.status_code}){Style.RESET_ALL}")
+            logger.info("Target is reachable (HTTP %s)", resp.status_code)
 
         if not args.quiet:
-            print(f"\n{Fore.CYAN}[*] Detecting WAF/CDN...{Style.RESET_ALL}")
+            logger.info("Detecting WAF/CDN...")
             waf_list = detect_waf(session)
             if waf_list:
-                print(f"  {Fore.YELLOW}[!] WAF Detected: {', '.join(waf_list)}{Style.RESET_ALL}")
+                logger.warning("WAF Detected: %s", ", ".join(waf_list))
             else:
-                print(f"  {Fore.GREEN}[+] No WAF detected{Style.RESET_ALL}")
+                logger.info("No WAF detected")
 
-            print(f"\n{Fore.CYAN}[*] Analyzing technology stack...{Style.RESET_ALL}")
+            logger.info("Analyzing technology stack...")
             tech_stack = analyze_tech_stack(session)
             print_tech_stack(tech_stack)
 
         if config.auth_url:
             if not args.quiet:
-                print(f"\n{Fore.CYAN}[*] Authenticating...{Style.RESET_ALL}")
+                logger.info("Authenticating...")
             if not session.authenticate():
-                print(f"{Fore.YELLOW}[!] Proceeding without authentication{Style.RESET_ALL}")
+                logger.warning("Proceeding without authentication")
 
         session.start_time = time.time()
 
@@ -457,9 +487,9 @@ def main():
         crawler.crawl()
 
         if not args.quiet:
-            print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}  RUNNING DAST MODULES ({len(selected_modules)} modules){Style.RESET_ALL}")
-            print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+            logger.info("=" * 60)
+            logger.info("RUNNING DAST MODULES (%d modules)", len(selected_modules))
+            logger.info("=" * 60)
 
         progress = ProgressTracker(len(selected_modules), quiet=args.quiet)
 
@@ -468,10 +498,10 @@ def main():
                 name, module = ALL_MODULES[mod_key]
                 try:
                     if args.verbose:
-                        print(f"\n  {Fore.CYAN}[>] Running DAST: {name}{Style.RESET_ALL}")
+                        logger.debug("Running DAST: %s", name)
                     module.run(session)
                 except Exception as e:
-                    print(f"\n  {Fore.RED}[!] Module '{name}' error: {e}{Style.RESET_ALL}")
+                    logger.error("Module '%s' error: %s", name, e)
                 progress.update(name)
 
         progress.finish()
@@ -484,9 +514,9 @@ def main():
     if args.sast_dir:
         from scanner.sast.sast_engine import run_sast
         if not args.quiet:
-            print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}  RUNNING SAST MODULES on {args.sast_dir}{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+            logger.info("=" * 60)
+            logger.info("RUNNING SAST MODULES on %s", args.sast_dir)
+            logger.info("=" * 60)
         run_sast(session, args.sast_dir, quiet=args.quiet)
 
     session.end_time = time.time()
@@ -494,7 +524,7 @@ def main():
 
     scan_file = save_scan_results(session)
     if args.verbose:
-        print(f"\n{Fore.CYAN}[*] Scan results saved to: {scan_file}{Style.RESET_ALL}")
+        logger.debug("Scan results saved to: %s", scan_file)
 
     diff_data = None
     if args.diff:
@@ -504,7 +534,7 @@ def main():
             if not args.quiet and not args.json_output:
                 print_diff(diff_data)
         elif not args.quiet:
-            print(f"\n{Fore.YELLOW}[*] No previous scan found for comparison.{Style.RESET_ALL}")
+            logger.warning("No previous scan found for comparison.")
 
     compliance_data = None
     if args.compliance:
@@ -513,9 +543,9 @@ def main():
             print_compliance_summary(compliance_data)
 
     if not args.quiet and not args.json_output:
-        print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}  RESULTS{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        logger.info("=" * 60)
+        logger.info("RESULTS")
+        logger.info("=" * 60)
         print_summary(session)
 
     from scanner.core import _sanitize_path
@@ -530,21 +560,21 @@ def main():
             with open(json_path, "w") as jf:
                 json.dump(json_data, jf, indent=2)
             if not args.quiet:
-                print(f"{Fore.GREEN}[+] JSON report saved to: {json_path}{Style.RESET_ALL}")
+                logger.info("JSON report saved to: %s", json_path)
 
     html_path = _sanitize_path(args.output)
     report_path = generate_html_report(session, html_path, compliance_data)
     if not args.quiet:
-        print(f"\n{Fore.GREEN}[+] HTML report saved to: {report_path}{Style.RESET_ALL}")
+        logger.info("HTML report saved to: %s", report_path)
 
     if args.pdf:
         pdf_out = _sanitize_path(args.pdf)
         pdf_path = generate_pdf_report(session, pdf_out, compliance_data)
         if not args.quiet:
-            print(f"{Fore.GREEN}[+] PDF report saved to: {pdf_path}{Style.RESET_ALL}")
+            logger.info("PDF report saved to: %s", pdf_path)
 
     if not args.quiet:
-        print(f"{Fore.CYAN}[*] Scan completed in {duration:.1f} seconds{Style.RESET_ALL}\n")
+        logger.info("Scan completed in %.1f seconds", duration)
 
     if args.ci:
         code = _ci_exit_code(session, args.severity_threshold)

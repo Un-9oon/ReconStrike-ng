@@ -2,6 +2,7 @@ import re
 import random
 import string
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 UPLOAD_PAYLOADS = [
@@ -183,5 +184,5 @@ def _check_size_limit(session: ScanSession, form: dict, field_name: str, other_d
                 affected_component=f"File upload handler at {form['action']}",
                 detection_method="Uploaded test files with dangerous extensions (.php, .jsp, .asp) and content types through discovered upload forms. Checked if files were stored in web-accessible locations and if server-side code execution occurred.",
             ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("file_upload _check_size_limit: operation failed: %s", e)

@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse, urljoin
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession, build_curl
 
 
@@ -642,7 +643,8 @@ def _test_page(session, url):
                         session, js_resp.text, url,
                         f"linked script {js_parsed.path}"
                     )
-        except Exception:
+        except Exception as e:
+            logger.debug("dom_xss _test_page: request failed: %s", e)
             continue
 
 

@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 
@@ -289,7 +290,8 @@ def _test_forms(session, form):
                     resp = session.post(action, data=test_data)
                 else:
                     resp = session.get(action, params=test_data)
-            except Exception:
+            except Exception as e:
+                logger.debug("ldap_injection _test_forms: request failed: %s", e)
                 continue
 
             if not resp or resp.status_code in (404, 403):

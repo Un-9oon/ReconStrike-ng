@@ -2,6 +2,7 @@ import json
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 NOSQL_ERROR_PATTERNS = [
@@ -349,7 +350,8 @@ def _test_forms(session, form):
                         except (json.JSONDecodeError, TypeError):
                             json_body[k] = v
                     resp = session.post(action, json=json_body)
-                except Exception:
+                except Exception as e:
+                    logger.debug("nosql_injection: JSON POST failed, falling back to form POST: %s", e)
                     resp = session.post(action, data=test_data)
             else:
                 resp = session.get(action, params=test_data)

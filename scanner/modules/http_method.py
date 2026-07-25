@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession, build_curl
 
 
@@ -45,7 +46,8 @@ def _safe_request(session, method, url, **kwargs):
         kwargs.setdefault("verify", session.config.verify_ssl)
         resp = session.session.request(method, url, **kwargs)
         return resp
-    except Exception:
+    except Exception as e:
+        logger.debug("http_method _safe_request: %s %s failed: %s", method, url, e)
         return None
 
 
@@ -332,7 +334,8 @@ def _test_method_override_headers(session, url):
                     timeout=session.config.timeout,
                     verify=session.config.verify_ssl,
                 )
-            except Exception:
+            except Exception as e:
+                logger.debug("http_method _test_method_override_headers: request failed: %s", e)
                 continue
 
             if not resp:

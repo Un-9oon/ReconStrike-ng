@@ -3,6 +3,7 @@ import time
 import base64
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 
@@ -98,8 +99,8 @@ def _looks_like_java_serial(value: str) -> bool:
         decoded = base64.b64decode(value, validate=True)
         if decoded[:4] == bytes.fromhex(JAVA_MAGIC):
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("deserialization _looks_like_java_serial: base64 decode failed: %s", e)
     return False
 
 
@@ -194,8 +195,8 @@ def _check_php_deserialization(session: ScanSession) -> None:
             decoded = base64.b64decode(cookie_value, validate=True).decode("utf-8", errors="ignore")
             if _looks_like_php_serial(decoded):
                 _report_php_finding(session, target, cookie_name, decoded, "cookie (base64)")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("deserialization _check_php_deserialization: base64 decode failed: %s", e)
 
     for form in session.forms[:10]:
         for inp in form.get("inputs", []):
@@ -307,8 +308,8 @@ def _check_dotnet_viewstate(session: ScanSession) -> None:
                 is_encrypted = False
             if len(decoded) < 20:
                 mac_enabled = False
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("deserialization _check_dotnet_viewstate: base64 decode failed: %s", e)
 
         issues = []
         severity = Severity.INFO
@@ -604,8 +605,8 @@ def _check_python_pickle(session: ScanSession) -> None:
                         ),
                     ))
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("deserialization _check_python_pickle: operation failed: %s", e)
 
 
 def run(session: ScanSession) -> None:

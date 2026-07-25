@@ -5,48 +5,50 @@
 ReconStrike is a professional-grade vulnerability scanner built in Python that performs comprehensive security assessments against web applications and network endpoints. Designed for penetration testers, security auditors, and DevSecOps teams.
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
-![Modules](https://img.shields.io/badge/scan%20modules-21-green.svg)
+![Modules](https://img.shields.io/badge/scan%20modules-43-green.svg)
+![License](https://img.shields.io/badge/license-MIT-brightgreen.svg)
 ![OWASP](https://img.shields.io/badge/OWASP-Top%2010%202021-orange.svg)
 ![PCI DSS](https://img.shields.io/badge/PCI%20DSS-v4.0-red.svg)
-![License](https://img.shields.io/badge/license-MIT-brightgreen.svg)
 
 ---
 
 ## Features
 
 ### Core Scanning Engine
-- **21 vulnerability scan modules** covering OWASP Top 10 and beyond
-- **Zero false positive architecture** — baseline comparison, double-verification, structural validation
-- **Concurrent crawler** — multi-threaded discovery (5-10x faster than sequential)
-- **WAF detection** — identifies 10+ WAF/CDN products before scanning
-- **Technology stack fingerprinting** — frameworks, servers, CMS, CDN, analytics
+- **43 vulnerability scan modules** covering OWASP Top 10 and beyond
+- **Zero false positive architecture** -- baseline comparison, double-verification, structural validation
+- **Concurrent crawler** -- multi-threaded discovery (5-10x faster than sequential)
+- **WAF detection** -- identifies 10+ WAF/CDN products before scanning
+- **Technology stack fingerprinting** -- frameworks, servers, CMS, CDN, analytics
 
 ### Scan Modules
 
 | Category | Modules |
 |----------|---------|
-| **Injection** | SQL Injection, XSS, SSTI, Command Injection, XXE, LFI/Path Traversal |
-| **Authentication** | Auth bypass, Default credentials, JWT vulnerabilities, CSRF |
-| **Configuration** | Security headers, SSL/TLS, Misconfigurations, CORS |
-| **Discovery** | Port scanning, Subdomain enumeration, Directory bruteforce, Information disclosure |
-| **Access Control** | IDOR, SSRF, File upload vulnerabilities |
-| **Fingerprinting** | Technology detection, WAF identification |
-| **API Security** | Endpoint discovery, Auth bypass, Rate limiting, CORS, Method testing |
+| **Reconnaissance** | fingerprint, portscan, subdomain, subdomain_takeover |
+| **Configuration & Headers** | headers, ssl, misconfig, cors, session_security |
+| **Injection** | sqli, xss, dom_xss, ssti, cmd_injection, nosql, ldap_injection, xxe, second_order |
+| **Authentication & Authorization** | auth, jwt, idor, oauth_misconfig, mass_assignment |
+| **Client-Side** | csrf, open_redirect, prototype_pollution, hpp |
+| **Server-Side** | ssrf, lfi, file_upload, request_smuggling, deserialization, cache_poisoning, host_header, http_method, race_condition, websocket_security |
+| **Information & Discovery** | directory, info_disclosure, graphql, business_logic |
+| **Advanced** | cve_check, zero_day |
 
 ### Advanced Features
-- **7 scan profiles** — quick, standard, deep, aggressive, passive, api, owasp
+- **8 scan profiles** -- quick, standard, deep, aggressive, passive, api, owasp, full
 - **OWASP Top 10 & PCI DSS v4.0 compliance mapping** with pass/fail scoring
-- **Scan diffing** — compare current results against previous scans to track remediation
-- **API endpoint security** — auto-discovers and tests REST API endpoints
-- **WAF detection** — Cloudflare, AWS WAF, Akamai, Imperva, ModSecurity, F5, Sucuri, and more
-- **Rate limiting** — configurable requests per second
-- **Proxy support** — HTTP and SOCKS5 proxy routing (Tor-compatible)
-- **Scope control** — include/exclude URL patterns via regex
-- **JSON output** — machine-readable output for automation pipelines
-- **CI/CD integration** — exit codes based on severity thresholds
-- **Authenticated scanning** — auto-detect login forms and maintain sessions
-- **Progress tracking** — real-time progress bar with ETA
-- **HTML reports** — professional dark-themed reports with risk scoring and executive summary
+- **Scan diffing** -- compare current results against previous scans to track remediation
+- **API endpoint security** -- auto-discovers and tests REST API endpoints
+- **WAF detection** -- Cloudflare, AWS WAF, Akamai, Imperva, ModSecurity, F5, Sucuri, and more
+- **Rate limiting** -- configurable requests per second
+- **Proxy support** -- HTTP and SOCKS5 proxy routing (Tor-compatible)
+- **Scope control** -- include/exclude URL patterns via regex
+- **JSON output** -- machine-readable output for automation pipelines
+- **CI/CD integration** -- exit codes based on severity thresholds
+- **Authenticated scanning** -- auto-detect login forms and maintain sessions
+- **Progress tracking** -- real-time progress bar with ETA
+- **HTML reports** -- professional dark-themed reports with risk scoring and executive summary
+- **PDF reports** -- exportable PDF reports for stakeholder distribution
 
 ---
 
@@ -86,6 +88,9 @@ python3 reconstrike.py -t https://target.com --profile owasp --compliance
 
 # Passive recon only (no injection tests)
 python3 reconstrike.py -t https://target.com --profile passive
+
+# Full scan (all 43 modules)
+python3 reconstrike.py -t https://target.com --profile full
 ```
 
 ### Authenticated Scanning
@@ -99,6 +104,9 @@ python3 reconstrike.py -t https://target.com \
 ```bash
 # Run specific modules
 python3 reconstrike.py -t https://target.com --modules sqli,xss,headers,ssl
+
+# List all available modules
+python3 reconstrike.py --list-modules
 
 # Run all except slow ones
 python3 reconstrike.py -t https://target.com --exclude-modules portscan,subdomain
@@ -135,11 +143,35 @@ python3 reconstrike.py -t https://target.com \
 
 ---
 
+## Logging
+
+ReconStrike uses Python's structured logging system with configurable verbosity:
+
+```bash
+# Verbose output (DEBUG level)
+python3 reconstrike.py -t https://target.com --verbose
+
+# Quiet mode (WARNING and above only)
+python3 reconstrike.py -t https://target.com --quiet
+
+# Disable colored output (useful for piping/logging)
+python3 reconstrike.py -t https://target.com --no-color
+
+# Write logs to a file
+python3 reconstrike.py -t https://target.com --log-file scan.log
+
+# Combine flags
+python3 reconstrike.py -t https://target.com --verbose --log-file debug.log --no-color
+```
+
+---
+
 ## Output Formats
 
 | Format | Flag | Description |
 |--------|------|-------------|
 | **HTML Report** | `-o report.html` | Professional dark-themed report with risk scoring |
+| **PDF Report** | `-o report.pdf` | Exportable PDF for stakeholders |
 | **JSON** | `--json` | Machine-readable output to stdout |
 | **JSON File** | `--json-file out.json` | Save JSON to file |
 | **CLI Summary** | (default) | Color-coded terminal output |
@@ -147,12 +179,67 @@ python3 reconstrike.py -t https://target.com \
 
 ---
 
+## CI/CD Integration
+
+ReconStrike integrates into CI/CD pipelines with exit codes based on severity thresholds:
+
+```yaml
+# .github/workflows/security-scan.yml
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ReconStrike
+        run: |
+          git clone https://github.com/cyphersec-404/ReconStrike.git
+          cd ReconStrike
+          pip install -r requirements.txt
+
+      - name: Run security scan
+        run: |
+          cd ReconStrike
+          python3 reconstrike.py \
+            -t ${{ vars.SCAN_TARGET }} \
+            --profile quick \
+            --ci \
+            --severity-threshold HIGH \
+            --quiet \
+            --no-color \
+            --json-file results.json
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: ReconStrike/results.json
+```
+
+Exit codes: `0` = no findings above threshold, `1` = critical findings, `2` = high findings.
+
+---
+
 ## Compliance
 
 ReconStrike maps findings to industry frameworks:
 
-- **OWASP Top 10 (2021)** — A01 through A10 category mapping with pass/fail
-- **PCI DSS v4.0** — Requirements 6.5.1 through 6.5.10
+- **OWASP Top 10 (2021)** -- A01 through A10 category mapping with pass/fail
+- **PCI DSS v4.0** -- Requirements 6.5.1 through 6.5.10
 
 Use `--compliance` to generate the compliance report section in both CLI and HTML output.
 
@@ -163,10 +250,11 @@ Use `--compliance` to generate the compliance report section in both CLI and HTM
 ```
 reconstrike.py              # CLI entry point
 scanner/
+  __init__.py               # Version and package metadata
   core.py                   # ScanSession, ScanConfig, Finding, Severity
   concurrent.py             # Multi-threaded crawler
   crawler.py                # URL/form extraction
-  reporter.py               # HTML report generation
+  reporter.py               # HTML/PDF report generation
   compliance.py             # OWASP/PCI DSS mapping
   diff_scan.py              # Scan history & comparison
   api_scanner.py            # REST API security testing
@@ -175,24 +263,47 @@ scanner/
   modules/
     sqli.py                 # SQL Injection (error + blind)
     xss.py                  # Reflected XSS
+    dom_xss.py              # DOM-based XSS
     ssti.py                 # Server-Side Template Injection
     lfi.py                  # Path Traversal / LFI
     cmd_injection.py        # OS Command Injection
     xxe.py                  # XML External Entity
+    nosql.py                # NoSQL Injection
+    ldap_injection.py       # LDAP Injection
+    second_order.py         # Second-Order Injection
     ssrf.py                 # Server-Side Request Forgery
     csrf.py                 # Cross-Site Request Forgery
     idor.py                 # Insecure Direct Object Reference
     jwt.py                  # JWT Vulnerabilities
     auth.py                 # Authentication Security
+    oauth_misconfig.py      # OAuth Misconfiguration
+    mass_assignment.py      # Mass Assignment
     headers.py              # Security Headers
     ssl_check.py            # SSL/TLS Configuration
     misconfig.py            # Security Misconfigurations
+    cors.py                 # CORS Misconfiguration
+    session_security.py     # Session Security
     directory.py            # Sensitive Files & Directories
     info_disclosure.py      # Information Disclosure
     file_upload.py          # File Upload Vulnerabilities
     portscan.py             # TCP Port Scanning
     subdomain.py            # Subdomain Enumeration
+    subdomain_takeover.py   # Subdomain Takeover
     fingerprint.py          # Technology Detection
+    open_redirect.py        # Open Redirect
+    prototype_pollution.py  # Prototype Pollution
+    hpp.py                  # HTTP Parameter Pollution
+    request_smuggling.py    # HTTP Request Smuggling
+    deserialization.py      # Insecure Deserialization
+    cache_poisoning.py      # Web Cache Poisoning
+    host_header.py          # Host Header Injection
+    http_method.py          # HTTP Method Tampering
+    race_condition.py       # Race Condition
+    websocket_security.py   # WebSocket Security
+    graphql.py              # GraphQL Security
+    business_logic.py       # Business Logic Flaws
+    cve_check.py            # CVE Database Lookup
+    zero_day.py             # Zero-Day Heuristic Fuzzing
 ```
 
 ---

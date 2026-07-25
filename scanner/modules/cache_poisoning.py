@@ -3,6 +3,7 @@ import hashlib
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession, build_curl
 
 
@@ -291,7 +292,8 @@ def _test_unkeyed_headers(session, url):
                 ),
             ))
 
-        except Exception:
+        except Exception as e:
+            logger.debug("cache_poisoning _test_unkeyed_headers: operation failed: %s", e)
             continue
 
 
@@ -390,7 +392,8 @@ def _test_parameter_cloaking(session, url):
                         ),
                     ))
                     return
-        except Exception:
+        except Exception as e:
+            logger.debug("cache_poisoning _test_parameter_cloaking: operation failed: %s", e)
             continue
 
 
@@ -488,7 +491,8 @@ def _test_fat_get(session, url):
                 ))
                 return
 
-        except Exception:
+        except Exception as e:
+            logger.debug("cache_poisoning _test_fat_get: operation failed: %s", e)
             continue
 
 
@@ -586,8 +590,8 @@ def _test_cache_header_presence(session, url):
                 "identified risky caching configurations: " + "; ".join(risks)
             ),
         ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("cache_poisoning _test_cache_header_presence: operation failed: %s", e)
 
 
 def run(session: ScanSession) -> None:

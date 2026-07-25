@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession, build_curl
 
 
@@ -212,7 +213,8 @@ def _test_clte(session, url):
                     ),
                 ))
                 return
-        except Exception:
+        except Exception as e:
+            logger.debug("request_smuggling _test_clte: operation failed: %s", e)
             continue
 
 
@@ -322,7 +324,8 @@ def _test_tecl(session, url):
                     ),
                 ))
                 return
-        except Exception:
+        except Exception as e:
+            logger.debug("request_smuggling _test_tecl: operation failed: %s", e)
             continue
 
 
@@ -411,7 +414,8 @@ def _test_te_obfuscation(session, url):
                             f"baseline ({baseline.status_code}), suggesting inconsistent TE parsing."
                         ),
                     ))
-        except Exception:
+        except Exception as e:
+            logger.debug("request_smuggling _test_te_obfuscation: operation failed: %s", e)
             continue
 
 
@@ -490,8 +494,8 @@ def _test_http_version_downgrade(session, url):
                         "potential protocol downgrade."
                     ),
                 ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("request_smuggling _test_http_version_downgrade: operation failed: %s", e)
 
 
 def run(session: ScanSession) -> None:

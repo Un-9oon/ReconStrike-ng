@@ -2,6 +2,7 @@ import socket
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 COMMON_PORTS = {
@@ -43,13 +44,13 @@ def _scan_port(host: str, port: int, timeout: float = 2.0) -> tuple[int, bool, s
                         sock.send(b"HEAD / HTTP/1.0\r\nHost: " + host.encode() + b"\r\n\r\n")
                     sock.settimeout(2)
                     banner = sock.recv(1024).decode("utf-8", errors="replace").strip()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("portscan _scan_port: socket operation failed: %s", e)
             sock.close()
             return port, True, banner
         sock.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("portscan _scan_port: socket operation failed: %s", e)
     return port, False, ""
 
 

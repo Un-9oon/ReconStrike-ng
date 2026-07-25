@@ -1,8 +1,20 @@
 from setuptools import setup, find_packages
 
+# Read version from scanner package
+import re
+import ast
+
+with open("scanner/__init__.py") as f:
+    for line in f:
+        if line.startswith("__version__"):
+            version = ast.literal_eval(line.split("=")[1].strip())
+            break
+    else:
+        version = "0.0.0"
+
 setup(
     name="reconstrike",
-    version="3.0.0",
+    version=version,
     description="Advanced Web & Network Vulnerability Assessment Framework",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -12,14 +24,12 @@ setup(
     packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[
-        "requests>=2.31.0",
+        "requests[socks]>=2.31.0",
         "beautifulsoup4>=4.12.0",
         "urllib3>=2.0.0",
         "colorama>=0.4.6",
-        "jinja2>=3.1.0",
-        "python-nmap>=0.7.1",
         "dnspython>=2.4.0",
-        "requests[socks]>=2.31.0",
+        "fpdf2>=2.8.0",
     ],
     entry_points={
         "console_scripts": [

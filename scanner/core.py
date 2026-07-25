@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 import requests
 from colorama import Fore, Style
 
+from scanner.log import logger
+
 
 class Severity(Enum):
     CRITICAL = "CRITICAL"
@@ -187,7 +189,7 @@ class ScanSession:
             try:
                 self._scope_exclude_re = re.compile(config.scope_exclude, re.IGNORECASE)
             except re.error as e:
-                print(f"{Fore.RED}[!] Invalid --scope-exclude regex: {e}{Style.RESET_ALL}")
+                logger.error("Invalid --scope-exclude regex: %s", e)
         self._consecutive_fails = 0
         self._consecutive_blocks = 0
         self._warned_block = False
@@ -212,7 +214,7 @@ class ScanSession:
                     login_form = form
                     break
             if not login_form:
-                print(f"{Fore.YELLOW}[!] No login form found at {self.config.auth_url}{Style.RESET_ALL}")
+                logger.warning("No login form found at %s", self.config.auth_url)
                 return False
 
             post_data = {}
@@ -231,17 +233,18 @@ class ScanSession:
             action_parsed = urlparse(action)
 
             if auth_parsed.scheme == "https" and action_parsed.scheme == "http":
-                print(
-                    f"{Fore.RED}[!] Refusing to send credentials over unencrypted HTTP action "
-                    f"({action}).{Style.RESET_ALL}"
+                logger.error(
+                    "Refusing to send credentials over unencrypted HTTP action (%s).",
+                    action,
                 )
                 return False
 
             action_domain = action_parsed.netloc.lower()
             if action_domain and action_domain != auth_domain:
-                print(
-                    f"{Fore.RED}[!] Login form action points to different domain "
-                    f"({action_domain} != {auth_domain}). Refusing to send credentials.{Style.RESET_ALL}"
+                logger.error(
+                    "Login form action points to different domain (%s != %s). "
+                    "Refusing to send credentials.",
+                    action_domain, auth_domain,
                 )
                 return False
 
@@ -250,18 +253,18 @@ class ScanSession:
                 return False
 
             if resp.status_code == 200 and "logout" in resp.text.lower():
-                print(f"{Fore.GREEN}[+] Authentication successful{Style.RESET_ALL}")
+                logger.info("Authentication successful")
                 return True
 
             if resp.status_code in (301, 302, 303):
-                print(f"{Fore.GREEN}[+] Authentication likely successful (redirect){Style.RESET_ALL}")
+                logger.info("Authentication likely successful (redirect)")
                 return True
 
-            print(f"{Fore.YELLOW}[!] Authentication result uncertain (status {resp.status_code}){Style.RESET_ALL}")
+            logger.warning("Authentication result uncertain (status %s)", resp.status_code)
             return True
 
         except Exception as e:
-            print(f"{Fore.RED}[-] Authentication failed: {type(e).__name__}{Style.RESET_ALL}")
+            logger.error("Authentication failed: %s", type(e).__name__)
             return False
 
     def add_finding(self, finding: Finding):
@@ -272,20 +275,17 @@ class ScanSession:
             finding.description = _redact_sensitive(finding.description)
             finding.evidence = _redact_sensitive(finding.evidence)
             self.findings.append(finding)
-        severity_color = finding.severity.color
-        conf = f"{Fore.GREEN}[CONFIRMED]" if finding.confirmed else f"{Fore.YELLOW}[TENTATIVE]"
-        
+        conf = "CONFIRMED" if finding.confirmed else "TENTATIVE"
+
         # Format the URL cleanly, keeping it short
         parsed = urlparse(finding.url)
         path_query = (parsed.path or "/") + ("?" + parsed.query if parsed.query else "")
         display_url = path_query if len(path_query) <= 80 else path_query[:77] + "..."
         target_base = f"{parsed.scheme}://{parsed.netloc}"
-        
-        print(
-            f"  {Fore.WHITE}•{Style.RESET_ALL} {severity_color}[{finding.severity.value}]{Style.RESET_ALL} "
-            f"{finding.title}\n"
-            f"    {Fore.LIGHTBLACK_EX}Target:{Style.RESET_ALL} {target_base}\n"
-            f"    {Fore.LIGHTBLACK_EX}Path:  {Style.RESET_ALL} {display_url} {conf}{Style.RESET_ALL}"
+
+        logger.info(
+            "[%s] %s | Target: %s | Path: %s [%s]",
+            finding.severity.value, finding.title, target_base, display_url, conf,
         )
 
     def _rate_limit(self):
@@ -311,9 +311,9 @@ class ScanSession:
                 self._consecutive_fails += 1
                 if self._consecutive_fails >= 5 and not self._warned_fail:
                     self._warned_fail = True
-                    print(
-                        f"\n  {Fore.RED}[!] WARNING: High request failure rate / timeouts detected (5+ failed requests). "
-                        f"Target host may be dropping connections or firewalling your IP.{Style.RESET_ALL}"
+                    logger.error(
+                        "High request failure rate / timeouts detected (5+ failed requests). "
+                        "Target host may be dropping connections or firewalling your IP."
                     )
             else:
                 self._consecutive_fails = 0
@@ -321,12 +321,13 @@ class ScanSession:
                     self._consecutive_blocks += 1
                     if self._consecutive_blocks >= 3 and not self._warned_block:
                         self._warned_block = True
-                        print(
-                            f"\n  {Fore.YELLOW}[!] WARNING: Target returned HTTP {resp.status_code} multiple times. "
-                            f"Target WAF or rate-limiter is actively blocking/throttling requests.{Style.RESET_ALL}"
+                        logger.warning(
+                            "Target returned HTTP %s multiple times. "
+                            "Target WAF or rate-limiter is actively blocking/throttling requests.",
+                            resp.status_code,
                         )
                         # Auto-Evasion: Automatically back off
-                        print(f"  {Fore.CYAN}[*] AUTO-EVASION: Adaptive throttling engaged. Delaying requests to bypass WAF...{Style.RESET_ALL}")
+                        logger.info("AUTO-EVASION: Adaptive throttling engaged. Delaying requests to bypass WAF...")
                         self.config.rate_limit = 0.5
                 else:
                     self._consecutive_blocks = 0

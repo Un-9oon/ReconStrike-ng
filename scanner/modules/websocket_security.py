@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse, urljoin
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession, build_curl
 
 
@@ -93,7 +94,8 @@ def _detect_ws_endpoints(session, base_url):
                 if any(kw in body_lower for kw in ("websocket", "upgrade", "sec-websocket")):
                     endpoints.append({"url": url, "status": 400, "type": "ws_aware"})
 
-        except Exception:
+        except Exception as e:
+            logger.debug("websocket_security _detect_ws_endpoints: operation failed: %s", e)
             continue
 
     # Also check crawled URLs for WebSocket indicators
@@ -125,7 +127,8 @@ def _detect_ws_endpoints(session, base_url):
                         "type": "js_reference",
                         "source": url,
                     })
-        except Exception:
+        except Exception as e:
+            logger.debug("websocket_security _detect_ws_endpoints: operation failed: %s", e)
             continue
 
     # Deduplicate by URL
@@ -253,7 +256,8 @@ def _test_origin_validation(session, endpoint):
                 ))
                 return
 
-        except Exception:
+        except Exception as e:
+            logger.debug("websocket_security _test_origin_validation: operation failed: %s", e)
             continue
 
 
@@ -347,8 +351,8 @@ def _test_ws_no_auth(session, endpoint):
                         f"indicating the endpoint does not require authentication."
                     ),
                 ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("websocket_security _test_ws_no_auth: connection failed: %s", e)
 
 
 def _report_ws_endpoints(session, endpoints):

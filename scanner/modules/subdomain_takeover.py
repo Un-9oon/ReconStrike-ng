@@ -2,6 +2,7 @@ import re
 import socket
 from urllib.parse import urlparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 
@@ -205,15 +206,15 @@ def _resolve_cname(hostname: str) -> str:
         cname = result.stdout.strip().rstrip(".")
         if cname:
             return cname
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("subdomain_takeover _resolve_cname: operation failed: %s", e)
 
     try:
         result = socket.getaddrinfo(hostname, None)
         if result:
             return result[0][4][0]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("subdomain_takeover _resolve_cname: socket operation failed: %s", e)
 
     return ""
 
@@ -288,7 +289,8 @@ def _check_takeover(session: ScanSession, subdomain: str) -> None:
             url = f"{scheme}://{subdomain}"
             try:
                 resp = session.get(url, allow_redirects=True)
-            except Exception:
+            except Exception as e:
+                logger.debug("subdomain_takeover _check_takeover: request failed: %s", e)
                 continue
 
             if not resp:

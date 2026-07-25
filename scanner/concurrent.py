@@ -5,6 +5,7 @@ from urllib.parse import urlparse, parse_qs
 from colorama import Fore, Style
 
 from scanner.core import ScanSession, _is_private_ip
+from scanner.log import logger
 
 MAX_URLS = 500
 
@@ -23,7 +24,7 @@ class ConcurrentCrawler:
     def crawl(self):
         from scanner.crawler import extract_links, extract_forms, extract_js_urls
 
-        print(f"\n{Fore.CYAN}[*] Starting concurrent crawler ({self.config.threads} threads)...{Style.RESET_ALL}")
+        logger.info("Starting concurrent crawler (%d threads)...", self.config.threads)
         start = time.time()
 
         queue = [self.config.target]
@@ -31,7 +32,7 @@ class ConcurrentCrawler:
 
         while queue:
             if self._total_urls >= MAX_URLS:
-                print(f"{Fore.YELLOW}[!] Crawl limit reached ({MAX_URLS} URLs){Style.RESET_ALL}")
+                logger.warning("Crawl limit reached (%d URLs)", MAX_URLS)
                 break
 
             batch = queue[:self.config.threads * 2]
@@ -73,9 +74,9 @@ class ConcurrentCrawler:
                                     queue.append(link)
 
         elapsed = time.time() - start
-        print(
-            f"{Fore.GREEN}[+] Crawling complete: {len(self.session.crawled_urls)} URLs, "
-            f"{len(self.session.forms)} forms ({elapsed:.1f}s){Style.RESET_ALL}"
+        logger.info(
+            "Crawling complete: %d URLs, %d forms (%.1fs)",
+            len(self.session.crawled_urls), len(self.session.forms), elapsed,
         )
 
     def _fetch(self, url):

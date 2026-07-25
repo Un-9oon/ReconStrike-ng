@@ -60,9 +60,15 @@ def scan_api_endpoints(session: ScanSession):
 
 
 def _check_api_auth(session: ScanSession, endpoint: dict):
-    unauth_session = __import__("requests").Session()
+    import requests as _requests
+    unauth_session = _requests.Session()
     unauth_session.verify = session.config.verify_ssl
     unauth_session.headers.update({"User-Agent": session.config.user_agent})
+    if session.config.proxy:
+        unauth_session.proxies.update({
+            "http": session.config.proxy,
+            "https": session.config.proxy,
+        })
 
     try:
         resp = unauth_session.get(endpoint["url"], timeout=session.config.timeout)

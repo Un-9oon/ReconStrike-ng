@@ -2,6 +2,7 @@ import json
 import re
 from urllib.parse import urlparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 
@@ -125,7 +126,8 @@ def _test_form_encoded(session, form):
 
         try:
             resp = session.post(action, data=test_data)
-        except Exception:
+        except Exception as e:
+            logger.debug("mass_assignment _test_form_encoded: request failed: %s", e)
             continue
 
         if not resp or resp.status_code in (404,):
@@ -303,7 +305,8 @@ def _test_form_json(session, form):
 
         try:
             resp = session.post(action, json=test_json)
-        except Exception:
+        except Exception as e:
+            logger.debug("mass_assignment _test_form_json: request failed: %s", e)
             continue
 
         if not resp or resp.status_code in (404,):

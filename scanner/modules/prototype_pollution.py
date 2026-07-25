@@ -2,6 +2,7 @@ import json
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 
@@ -267,7 +268,8 @@ def _test_forms_json(session, form):
 
         try:
             resp = session.post(action, json=test_json)
-        except Exception:
+        except Exception as e:
+            logger.debug("prototype_pollution _test_forms_json: request failed: %s", e)
             continue
 
         if not resp or resp.status_code in (404, 403):

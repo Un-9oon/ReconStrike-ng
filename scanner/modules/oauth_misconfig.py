@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 
@@ -57,7 +58,8 @@ def _check_discovery_endpoints(session, base_url):
 
         try:
             resp = session.get(discovery_url)
-        except Exception:
+        except Exception as e:
+            logger.debug("oauth_misconfig _check_discovery_endpoints: request failed: %s", e)
             continue
 
         if not resp or resp.status_code != 200:
@@ -146,8 +148,8 @@ def _check_discovery_endpoints(session, base_url):
                     auth_endpoint = config.get("authorization_endpoint", "")
                     if auth_endpoint:
                         _test_redirect_uri(session, auth_endpoint, base_url)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("oauth_misconfig _check_discovery_endpoints: JSON parse failed: %s", e)
 
                 return
 
@@ -220,7 +222,8 @@ def _test_redirect_uri(session, auth_endpoint, base_url):
 
         try:
             resp = session.get(test_url)
-        except Exception:
+        except Exception as e:
+            logger.debug("oauth_misconfig _test_redirect_uri: request failed: %s", e)
             continue
 
         if not resp:

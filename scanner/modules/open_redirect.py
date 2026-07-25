@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 
@@ -96,7 +97,8 @@ def _test_url_params(session, url):
             try:
                 # Use allow_redirects=False to catch 3xx redirects
                 resp = session.get(test_url)
-            except Exception:
+            except Exception as e:
+                logger.debug("open_redirect _test_url_params: request failed: %s", e)
                 continue
 
             if not resp:
@@ -313,7 +315,8 @@ def _test_path_based(session, url):
 
         try:
             resp = session.get(test_url)
-        except Exception:
+        except Exception as e:
+            logger.debug("open_redirect _test_path_based: request failed: %s", e)
             continue
 
         if not resp:
@@ -472,7 +475,8 @@ def _test_forms(session, form):
                     resp = session.post(action, data=test_data)
                 else:
                     resp = session.get(action, params=test_data)
-            except Exception:
+            except Exception as e:
+                logger.debug("open_redirect _test_forms: request failed: %s", e)
                 continue
 
             if not resp:

@@ -3,6 +3,7 @@ import string
 import collections
 from urllib.parse import urlparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 
@@ -279,7 +280,8 @@ def _check_session_randomness(session: ScanSession, url: str) -> None:
         fresh.headers.update({"User-Agent": session.config.user_agent})
         try:
             resp = fresh.get(url, timeout=session.config.timeout, allow_redirects=True)
-        except Exception:
+        except Exception as e:
+            logger.debug("session_security _check_session_randomness: operation failed: %s", e)
             continue
         if not resp:
             continue

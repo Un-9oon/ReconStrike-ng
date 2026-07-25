@@ -30,3 +30,6 @@ htmlcov/
 
 *.bak
 *.tmp
+
+*.pdf
+add_evasion.py

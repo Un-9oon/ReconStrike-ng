@@ -2,6 +2,7 @@ import threading
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession, build_curl
 
 
@@ -81,8 +82,8 @@ def _send_concurrent_requests(session, method, url, data=None, count=CONCURRENT_
                         "body_hash": hash(resp.text[:500]),
                         "headers": dict(resp.headers),
                     })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("race_condition _make_request: request failed: %s", e)
 
     threads = []
     for _ in range(count):
@@ -515,7 +516,8 @@ def _test_limit_bypass(session, url):
                         f"a TOCTOU window."
                     ),
                 ))
-        except Exception:
+        except Exception as e:
+            logger.debug("race_condition _test_limit_bypass: operation failed: %s", e)
             continue
 
 

@@ -4,6 +4,7 @@ import re
 import hashlib
 import hmac
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 
@@ -14,7 +15,8 @@ def _decode_jwt_part(part: str) -> dict | None:
     try:
         decoded = base64.urlsafe_b64decode(part)
         return json.loads(decoded)
-    except Exception:
+    except Exception as e:
+        logger.debug("jwt _decode_jwt_part: base64/JSON decode failed: %s", e)
         return None
 
 
