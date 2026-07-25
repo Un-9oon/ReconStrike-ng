@@ -156,7 +156,8 @@ Examples:
   %(prog)s -t https://example.com --rate-limit 10 --ci
         """
     )
-    parser.add_argument("-t", "--target", required=True, help="Target URL")
+    parser.add_argument("-t", "--target", help="Target URL (Required for DAST)")
+    parser.add_argument("--sast-dir", help="Local directory path for Static Application Security Testing (SAST)")
     parser.add_argument("-o", "--output", default="reconstrike_report.html", help="Output report file (default: reconstrike_report.html)")
     parser.add_argument("--depth", type=int, default=3, help="Crawl depth (default: 3)")
     parser.add_argument("--timeout", type=int, default=10, help="Request timeout in seconds (default: 10)")
@@ -352,14 +353,21 @@ def main():
     if not args.quiet:
         print(BANNER)
 
-    target = args.target
-    if not target.startswith(("http://", "https://")):
-        target = f"http://{target}"
-
-    parsed = urlparse(target)
-    if not parsed.netloc:
-        print(f"{Fore.RED}[!] Invalid target URL: {target}{Style.RESET_ALL}")
+    if not args.target and not args.sast_dir:
+        print(f"{Fore.RED}[!] You must provide either --target (DAST) or --sast-dir (SAST) or both.{Style.RESET_ALL}")
         sys.exit(1)
+
+    if args.target:
+        target = args.target
+        if not target.startswith(("http://", "https://")):
+            target = f"http://{target}"
+
+        parsed = urlparse(target)
+        if not parsed.netloc:
+            print(f"{Fore.RED}[!] Invalid target URL: {target}{Style.RESET_ALL}")
+            sys.exit(1)
+    else:
+        target = ""
 
     cookies = {}
     if args.cookie:
@@ -415,60 +423,71 @@ def main():
         if args.rate_limit:
             print(f"{Fore.CYAN}[*] Rate Limit : {args.rate_limit} req/s{Style.RESET_ALL}")
 
-    resp = session.get(target)
-    if not resp:
-        print(f"\n{Fore.RED}[!] Cannot reach target: {target}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}    Check the URL and network connectivity.{Style.RESET_ALL}")
-        sys.exit(1)
+    if args.target:
+        resp = session.get(target)
+        if not resp:
+            print(f"\n{Fore.RED}[!] Cannot reach target: {target}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}    Check the URL and network connectivity.{Style.RESET_ALL}")
+            sys.exit(1)
 
-    if not args.quiet:
-        print(f"{Fore.GREEN}[+] Target is reachable (HTTP {resp.status_code}){Style.RESET_ALL}")
-
-    if not args.quiet:
-        print(f"\n{Fore.CYAN}[*] Detecting WAF/CDN...{Style.RESET_ALL}")
-        waf_list = detect_waf(session)
-        if waf_list:
-            print(f"  {Fore.YELLOW}[!] WAF Detected: {', '.join(waf_list)}{Style.RESET_ALL}")
-        else:
-            print(f"  {Fore.GREEN}[+] No WAF detected{Style.RESET_ALL}")
-
-        print(f"\n{Fore.CYAN}[*] Analyzing technology stack...{Style.RESET_ALL}")
-        tech_stack = analyze_tech_stack(session)
-        print_tech_stack(tech_stack)
-
-    if config.auth_url:
         if not args.quiet:
-            print(f"\n{Fore.CYAN}[*] Authenticating...{Style.RESET_ALL}")
-        if not session.authenticate():
-            print(f"{Fore.YELLOW}[!] Proceeding without authentication{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}[+] Target is reachable (HTTP {resp.status_code}){Style.RESET_ALL}")
 
-    session.start_time = time.time()
+        if not args.quiet:
+            print(f"\n{Fore.CYAN}[*] Detecting WAF/CDN...{Style.RESET_ALL}")
+            waf_list = detect_waf(session)
+            if waf_list:
+                print(f"  {Fore.YELLOW}[!] WAF Detected: {', '.join(waf_list)}{Style.RESET_ALL}")
+            else:
+                print(f"  {Fore.GREEN}[+] No WAF detected{Style.RESET_ALL}")
 
-    crawler = ConcurrentCrawler(session)
-    crawler.crawl()
+            print(f"\n{Fore.CYAN}[*] Analyzing technology stack...{Style.RESET_ALL}")
+            tech_stack = analyze_tech_stack(session)
+            print_tech_stack(tech_stack)
 
-    if not args.quiet:
-        print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}  RUNNING VULNERABILITY SCANS ({len(selected_modules)} modules){Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        if config.auth_url:
+            if not args.quiet:
+                print(f"\n{Fore.CYAN}[*] Authenticating...{Style.RESET_ALL}")
+            if not session.authenticate():
+                print(f"{Fore.YELLOW}[!] Proceeding without authentication{Style.RESET_ALL}")
 
-    progress = ProgressTracker(len(selected_modules), quiet=args.quiet)
+        session.start_time = time.time()
 
-    for mod_key in selected_modules:
-        if mod_key in ALL_MODULES:
-            name, module = ALL_MODULES[mod_key]
-            try:
-                if args.verbose:
-                    print(f"\n  {Fore.CYAN}[>] Running: {name}{Style.RESET_ALL}")
-                module.run(session)
-            except Exception as e:
-                print(f"\n  {Fore.RED}[!] Module '{name}' error: {e}{Style.RESET_ALL}")
-            progress.update(name)
+        crawler = ConcurrentCrawler(session)
+        crawler.crawl()
 
-    progress.finish()
+        if not args.quiet:
+            print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}  RUNNING DAST MODULES ({len(selected_modules)} modules){Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
 
-    if args.api_scan:
-        scan_api_endpoints(session)
+        progress = ProgressTracker(len(selected_modules), quiet=args.quiet)
+
+        for mod_key in selected_modules:
+            if mod_key in ALL_MODULES:
+                name, module = ALL_MODULES[mod_key]
+                try:
+                    if args.verbose:
+                        print(f"\n  {Fore.CYAN}[>] Running DAST: {name}{Style.RESET_ALL}")
+                    module.run(session)
+                except Exception as e:
+                    print(f"\n  {Fore.RED}[!] Module '{name}' error: {e}{Style.RESET_ALL}")
+                progress.update(name)
+
+        progress.finish()
+
+        if args.api_scan:
+            scan_api_endpoints(session)
+    else:
+        session.start_time = time.time()
+
+    if args.sast_dir:
+        from scanner.sast.sast_engine import run_sast
+        if not args.quiet:
+            print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}  RUNNING SAST MODULES on {args.sast_dir}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        run_sast(session, args.sast_dir, quiet=args.quiet)
 
     session.end_time = time.time()
     duration = session.end_time - session.start_time
