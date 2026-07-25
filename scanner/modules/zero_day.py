@@ -2,6 +2,7 @@ import re
 import json
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from colorama import Fore, Style
 
 from scanner.core import Finding, Severity, ScanSession
 
@@ -440,23 +441,23 @@ def _report_anomaly(
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Running zero-day heuristic scanner (intelligent fuzzing)...")
+    print(f"\n{Fore.CYAN}[⚡] Running Zero-Day Heuristics (Intelligent Fuzzing)...{Style.RESET_ALL}")
 
     target = session.config.target
 
     # Get baseline response for differential analysis
-    print("  [*] Establishing baseline response...")
+    print(f"  {Fore.LIGHTBLACK_EX}▸ Establishing baseline response...{Style.RESET_ALL}")
     baseline = _get_baseline(session, target)
     if baseline["status"] is None:
-        print("  [-] Could not establish baseline, skipping zero-day heuristics")
+        print(f"  {Fore.RED}✗ Could not establish baseline, skipping zero-day heuristics.{Style.RESET_ALL}")
         return
     print(
-        f"  [+] Baseline: status={baseline['status']}, "
+        f"  {Fore.GREEN}✓ Baseline established:{Style.RESET_ALL} status={baseline['status']}, "
         f"size={baseline['size']} bytes, time={baseline['time']:.2f}s"
     )
 
     # Phase 1: Fuzz URL parameters on crawled URLs
-    print("  [*] Phase 1: Fuzzing URL parameters...")
+    print(f"  {Fore.LIGHTBLACK_EX}▸ Phase 1: Fuzzing URL parameters...{Style.RESET_ALL}")
     fuzzed_urls = set()
     for url in list(session.crawled_urls):
         parsed = urlparse(url)
@@ -468,7 +469,7 @@ def run(session: ScanSession) -> None:
 
     if not fuzzed_urls:
         # If no parameterized URLs found, try common parameter names on the target
-        print("  [*] No parameterized URLs found, testing common parameters...")
+        print(f"  {Fore.YELLOW}ℹ No parameterized URLs found, testing common parameters...{Style.RESET_ALL}")
         common_params = ["id", "page", "q", "search", "name", "user", "file", "path", "url", "callback"]
         for param in common_params:
             test_url = f"{target}?{param}=1"
@@ -478,13 +479,16 @@ def run(session: ScanSession) -> None:
                 break  # Found a responsive parameter
 
     # Phase 2: Fuzz form fields
-    print("  [*] Phase 2: Fuzzing form fields...")
+    print(f"  {Fore.LIGHTBLACK_EX}▸ Phase 2: Fuzzing form fields...{Style.RESET_ALL}")
     _fuzz_form_fields(session, baseline)
 
     # Phase 3: HTTP method confusion
-    print("  [*] Phase 3: Testing HTTP method confusion...")
+    print(f"  {Fore.LIGHTBLACK_EX}▸ Phase 3: Testing HTTP method confusion...{Style.RESET_ALL}")
     _test_method_confusion(session, baseline)
 
     # Summary
     found_count = sum(1 for f in session.findings if f.module == "zero_day")
-    print(f"  [*] Zero-day heuristic scan complete: {found_count} anomalies detected")
+    if found_count > 0:
+        print(f"  {Fore.MAGENTA}★ Zero-day heuristic scan complete: {found_count} anomalies detected.{Style.RESET_ALL}")
+    else:
+        print(f"  {Fore.GREEN}✓ Zero-day heuristic scan complete: No anomalies detected.{Style.RESET_ALL}")
