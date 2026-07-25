@@ -325,6 +325,9 @@ class ScanSession:
                             f"\n  {Fore.YELLOW}[!] WARNING: Target returned HTTP {resp.status_code} multiple times. "
                             f"Target WAF or rate-limiter is actively blocking/throttling requests.{Style.RESET_ALL}"
                         )
+                        # Auto-Evasion: Automatically back off
+                        print(f"  {Fore.CYAN}[*] AUTO-EVASION: Adaptive throttling engaged. Delaying requests to bypass WAF...{Style.RESET_ALL}")
+                        self.config.rate_limit = 0.5
                 else:
                     self._consecutive_blocks = 0
 
