@@ -23,6 +23,10 @@ from scanner.modules import (
     jwt, file_upload, portscan, fingerprint, subdomain, cors,
     session_security, cve_check, zero_day, nosql_injection,
     subdomain_takeover, hpp, graphql, deserialization,
+    business_logic, cache_poisoning, dom_xss, host_header, http_method,
+    ldap_injection, mass_assignment, oauth_misconfig, open_redirect,
+    prototype_pollution, race_condition, request_smuggling, second_order,
+    websocket_security,
 )
 
 colorama_init()
@@ -37,7 +41,7 @@ BANNER = f"""
 {Fore.RED}██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║{Fore.YELLOW}███████║   ██║   ██║  ██║██║██║  ██╗███████╗
 {Fore.RED}╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝{Fore.YELLOW}╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚══════╝{Style.RESET_ALL}
 {Fore.CYAN}    Advanced Web & Network Vulnerability Assessment Framework v{VERSION}{Style.RESET_ALL}
-{Fore.WHITE}    29 Scan Modules | OWASP Top 10 + PCI DSS | Zero False Positives{Style.RESET_ALL}
+{Fore.WHITE}    43 Scan Modules | OWASP Top 10 + PCI DSS | Zero False Positives{Style.RESET_ALL}
 {Fore.WHITE}    WAF Detection | API Security | Compliance Mapping | Scan Diffing{Style.RESET_ALL}
 {Fore.YELLOW}    ────────────────────────────────────────────────────────────────{Style.RESET_ALL}
 """
@@ -72,6 +76,20 @@ ALL_MODULES = {
     "hpp": ("HTTP Parameter Pollution", hpp),
     "graphql": ("GraphQL Vulnerability Scanner", graphql),
     "deserialization": ("Insecure Deserialization", deserialization),
+    "business_logic": ("Business Logic Vulnerabilities", business_logic),
+    "cache_poisoning": ("Web Cache Poisoning", cache_poisoning),
+    "dom_xss": ("DOM-Based Cross-Site Scripting", dom_xss),
+    "host_header": ("Host Header Injection", host_header),
+    "http_method": ("HTTP Method Tampering & Verb Tampering", http_method),
+    "ldap_injection": ("LDAP Injection", ldap_injection),
+    "mass_assignment": ("Mass Assignment / HTTP Parameter Binding", mass_assignment),
+    "oauth_misconfig": ("OAuth 2.0 / OpenID Connect Misconfigurations", oauth_misconfig),
+    "open_redirect": ("Open Redirect Vulnerabilities", open_redirect),
+    "prototype_pollution": ("Server-Side Prototype Pollution", prototype_pollution),
+    "race_condition": ("HTTP Race Conditions & Concurrency Vulnerabilities", race_condition),
+    "request_smuggling": ("HTTP Request Smuggling (CL.TE / TE.CL)", request_smuggling),
+    "second_order": ("Second-Order Injection Vulnerabilities", second_order),
+    "websocket_security": ("WebSocket Security & Hijacking", websocket_security),
 }
 
 SCAN_PROFILES = {
