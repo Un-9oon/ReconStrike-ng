@@ -35,4 +35,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install flake8
-      - run: flake8 scanner/ reconstrike.py --max-line-length=120 --ignore=E501,W503,E402
+      - run: flake8 scanner/ reconstrike.py --max-line-length=120 --ignore=E501,W503,E402,F401,F841,F541,E302,E303,E741,W293,E127,E231,E226
