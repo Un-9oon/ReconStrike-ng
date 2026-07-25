@@ -274,9 +274,10 @@ class ScanSession:
             self.findings.append(finding)
         severity_color = finding.severity.color
         conf = f"{Fore.GREEN}CONFIRMED" if finding.confirmed else f"{Fore.YELLOW}TENTATIVE"
+        display_url = finding.url if len(finding.url) <= 150 else finding.url[:147] + "..."
         print(
             f"  {severity_color}[{finding.severity.value}]{Style.RESET_ALL} "
-            f"{finding.title} @ {finding.url} [{conf}{Style.RESET_ALL}]"
+            f"{finding.title} @ {display_url} [{conf}{Style.RESET_ALL}]"
         )
 
     def _rate_limit(self):
