@@ -273,11 +273,19 @@ class ScanSession:
             finding.evidence = _redact_sensitive(finding.evidence)
             self.findings.append(finding)
         severity_color = finding.severity.color
-        conf = f"{Fore.GREEN}CONFIRMED" if finding.confirmed else f"{Fore.YELLOW}TENTATIVE"
-        display_url = finding.url if len(finding.url) <= 150 else finding.url[:147] + "..."
+        conf = f"{Fore.GREEN}[CONFIRMED]" if finding.confirmed else f"{Fore.YELLOW}[TENTATIVE]"
+        
+        # Format the URL cleanly, keeping it short
+        parsed = urlparse(finding.url)
+        path_query = (parsed.path or "/") + ("?" + parsed.query if parsed.query else "")
+        display_url = path_query if len(path_query) <= 80 else path_query[:77] + "..."
+        target_base = f"{parsed.scheme}://{parsed.netloc}"
+        
         print(
-            f"  {severity_color}[{finding.severity.value}]{Style.RESET_ALL} "
-            f"{finding.title} @ {display_url} [{conf}{Style.RESET_ALL}]"
+            f"  {Fore.WHITE}•{Style.RESET_ALL} {severity_color}[{finding.severity.value}]{Style.RESET_ALL} "
+            f"{finding.title}\n"
+            f"    {Fore.LIGHTBLACK_EX}Target:{Style.RESET_ALL} {target_base}\n"
+            f"    {Fore.LIGHTBLACK_EX}Path:  {Style.RESET_ALL} {display_url} {conf}{Style.RESET_ALL}"
         )
 
     def _rate_limit(self):
