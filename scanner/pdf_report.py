@@ -7,10 +7,10 @@ from scanner.core import ScanSession, Severity, Finding
 
 
 SEVERITY_COLORS = {
-    "CRITICAL": (220, 38, 38),
-    "HIGH": (234, 88, 12),
-    "MEDIUM": (217, 119, 6),
-    "LOW": (37, 99, 235),
+    "CRITICAL": (139, 0, 0),
+    "HIGH": (255, 0, 0),
+    "MEDIUM": (255, 255, 0),
+    "LOW": (0, 128, 0),
     "INFO": (107, 114, 128),
 }
 
@@ -621,14 +621,18 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
 def _calculate_risk_score(findings: list) -> int:
     if not findings:
         return 0
-    weights = {"CRITICAL": 25, "HIGH": 15, "MEDIUM": 8, "LOW": 3, "INFO": 0}
-    score = 0
+    max_score = 0
+    scores = {"CRITICAL": 100, "HIGH": 74, "MEDIUM": 49, "LOW": 24, "INFO": 0}
     for f in findings:
-        w = weights[f.severity.value]
-        if f.confirmed:
-            w = int(w * 1.2)
-        score += w
-    return min(score, 100)
+        base = scores[f.severity.value]
+        if f.confirmed and base > 0:
+             bump = {"HIGH": 74, "MEDIUM": 49, "LOW": 24}.get(f.severity.value, base)
+             if bump == base and f.severity.value != "CRITICAL":
+                 pass
+        score = base
+        if score > max_score:
+            max_score = score
+    return max_score
 
 
 def _risk_label(score: int) -> str:
@@ -645,11 +649,11 @@ def _risk_label(score: int) -> str:
 
 def _risk_color(score: int) -> tuple:
     if score >= 75:
-        return (220, 38, 38)
+        return (139, 0, 0)
     if score >= 50:
-        return (234, 88, 12)
+        return (255, 0, 0)
     if score >= 25:
-        return (217, 119, 6)
+        return (255, 255, 0)
     if score > 0:
-        return (37, 99, 235)
-    return (34, 197, 94)
+        return (0, 128, 0)
+    return (107, 114, 128)

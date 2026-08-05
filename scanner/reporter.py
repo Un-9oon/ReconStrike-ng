@@ -19,10 +19,10 @@ def generate_html_report(session: ScanSession, output_path: str, compliance_data
     forms_found = len(session.forms)
 
     severity_colors = {
-        "CRITICAL": "#dc2626",
-        "HIGH": "#ea580c",
-        "MEDIUM": "#d97706",
-        "LOW": "#2563eb",
+        "CRITICAL": "#8b0000",
+        "HIGH": "#ff0000",
+        "MEDIUM": "#ffff00",
+        "LOW": "#008000",
         "INFO": "#6b7280",
     }
 
@@ -354,23 +354,35 @@ def _findings_summary_html(findings, severity_colors) -> str:
 def _calculate_risk_score(findings) -> int:
     if not findings:
         return 0
-    weights = {"CRITICAL": 25, "HIGH": 15, "MEDIUM": 8, "LOW": 3, "INFO": 0}
-    score = 0
+    
+    # Calculate score based on the highest severity finding
+    max_score = 0
+    scores = {"CRITICAL": 100, "HIGH": 74, "MEDIUM": 49, "LOW": 24, "INFO": 0}
+    
     for f in findings:
-        w = weights[f.severity.value]
-        if f.confirmed:
-            w = int(w * 1.2)
-        score += w
-    return min(score, 100)
+        base = scores[f.severity.value]
+        # Still give a slight bump for confirmed findings within their tier
+        if f.confirmed and base > 0:
+             # Prevent a confirmed high from jumping to critical, etc.
+             bump = {"HIGH": 74, "MEDIUM": 49, "LOW": 24}.get(f.severity.value, base)
+             if bump == base and f.severity.value != "CRITICAL":
+                 pass # For info
+        
+        score = base 
+        if score > max_score:
+            max_score = score
+            
+    return max_score
 
 
 def _risk_label(score: int) -> tuple[str, str]:
     if score >= 75:
-        return "CRITICAL", "#dc2626"
+        return "CRITICAL", "#8b0000"
     if score >= 50:
-        return "HIGH", "#ea580c"
+        return "HIGH", "#ff0000"
     if score >= 25:
-        return "MEDIUM", "#d97706"
+        return "MEDIUM", "#ffff00"
     if score > 0:
-        return "LOW", "#2563eb"
-    return "NONE", "#22c55e"
+        return "LOW", "#008000"
+    return "NONE", "#6b7280"
+

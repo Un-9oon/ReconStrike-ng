@@ -25,10 +25,10 @@ class Severity(Enum):
     @property
     def color(self):
         return {
-            "CRITICAL": Fore.RED + Style.BRIGHT,
+            "CRITICAL": "\033[38;5;88m",
             "HIGH": Fore.RED,
             "MEDIUM": Fore.YELLOW,
-            "LOW": Fore.CYAN,
+            "LOW": Fore.GREEN,
             "INFO": Fore.BLUE,
         }[self.value]
 
