@@ -626,9 +626,9 @@ def _calculate_risk_score(findings: list) -> int:
     for f in findings:
         base = scores[f.severity.value]
         if f.confirmed and base > 0:
-             bump = {"HIGH": 74, "MEDIUM": 49, "LOW": 24}.get(f.severity.value, base)
-             if bump == base and f.severity.value != "CRITICAL":
-                 pass
+            bump = {"HIGH": 74, "MEDIUM": 49, "LOW": 24}.get(f.severity.value, base)
+            if bump == base and f.severity.value != "CRITICAL":
+                pass
         score = base
         if score > max_score:
             max_score = score

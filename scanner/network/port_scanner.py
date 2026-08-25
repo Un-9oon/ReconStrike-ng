@@ -184,11 +184,11 @@ class HostResult:
 # Scan speed profiles
 # ---------------------------------------------------------------------------
 SPEED_PROFILES = {
-    1: {"concurrency": 50,   "timeout": 3.0, "delay": 0.1,  "label": "Stealth"},
-    2: {"concurrency": 150,  "timeout": 2.5, "delay": 0.05, "label": "Polite"},
-    3: {"concurrency": 300,  "timeout": 2.0, "delay": 0.01, "label": "Normal"},
-    4: {"concurrency": 500,  "timeout": 1.5, "delay": 0.0,  "label": "Aggressive"},
-    5: {"concurrency": 1000, "timeout": 1.0, "delay": 0.0,  "label": "Insane"},
+    1: {"concurrency": 50, "timeout": 3.0, "delay": 0.1, "label": "Stealth"},
+    2: {"concurrency": 150, "timeout": 2.5, "delay": 0.05, "label": "Polite"},
+    3: {"concurrency": 300, "timeout": 2.0, "delay": 0.01, "label": "Normal"},
+    4: {"concurrency": 500, "timeout": 1.5, "delay": 0.0, "label": "Aggressive"},
+    5: {"concurrency": 1000, "timeout": 1.0, "delay": 0.0, "label": "Insane"},
 }
 
 

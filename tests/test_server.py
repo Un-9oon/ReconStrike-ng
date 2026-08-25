@@ -69,7 +69,7 @@ AWS_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE""",
 }
 
 
-class TestHandler(http.server.BaseHTTPRequestHandler):
+class MockServerHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
@@ -163,6 +163,6 @@ class TestHandler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = http.server.HTTPServer(("127.0.0.1", PORT), TestHandler)
+    server = http.server.HTTPServer(("127.0.0.1", PORT), MockServerHandler)
     print(f"Test server running on http://127.0.0.1:{PORT}")
     server.serve_forever()

@@ -363,12 +363,12 @@ def _calculate_risk_score(findings) -> int:
         base = scores[f.severity.value]
         # Still give a slight bump for confirmed findings within their tier
         if f.confirmed and base > 0:
-             # Prevent a confirmed high from jumping to critical, etc.
-             bump = {"HIGH": 74, "MEDIUM": 49, "LOW": 24}.get(f.severity.value, base)
-             if bump == base and f.severity.value != "CRITICAL":
-                 pass # For info
-        
-        score = base 
+            # Prevent a confirmed high from jumping to critical, etc.
+            bump = {"HIGH": 74, "MEDIUM": 49, "LOW": 24}.get(f.severity.value, base)
+            if bump == base and f.severity.value != "CRITICAL":
+                pass  # For info
+
+        score = base
         if score > max_score:
             max_score = score
             
@@ -385,4 +385,3 @@ def _risk_label(score: int) -> tuple[str, str]:
     if score > 0:
         return "LOW", "#008000"
     return "NONE", "#6b7280"
-
