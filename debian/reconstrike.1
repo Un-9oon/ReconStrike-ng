@@ -1,0 +1,281 @@
+.TH RECONSTRIKE 1 "2026-07-25" "ReconStrike 3.1.0" "User Commands"
+.SH NAME
+reconstrike \- Advanced Web & Network Vulnerability Assessment Framework
+.SH SYNOPSIS
+.B reconstrike
+.RB [ \-t
+.IR TARGET ]
+.RB [ \-\fIOPTIONS\fR ]
+.SH DESCRIPTION
+.B ReconStrike
+is a professional-grade vulnerability scanner designed for penetration testers,
+security auditors, and DevSecOps teams. It performs comprehensive security
+assessments against web applications and network endpoints using 43 specialized
+scan modules.
+.PP
+Key features include:
+.IP \(bu 2
+43 vulnerability scan modules covering OWASP Top 10 and beyond
+.IP \(bu 2
+Zero false positive architecture with baseline comparison
+.IP \(bu 2
+Concurrent multi-threaded crawler
+.IP \(bu 2
+WAF/CDN detection (Cloudflare, AWS WAF, Akamai, Imperva, etc.)
+.IP \(bu 2
+Technology stack fingerprinting
+.IP \(bu 2
+Adaptive Network Masking (ANM) with Tor, proxy pool, MAC rotation
+.IP \(bu 2
+OWASP Top 10 & PCI DSS v4.0 compliance mapping
+.IP \(bu 2
+HTML, PDF, and JSON report generation
+.SH OPTIONS
+.SS "Target Selection"
+.TP
+.BI \-t " TARGET" "\fR,\fP \-\-target " TARGET
+Target URL (Required for DAST)
+.TP
+.BI \-\-sast\-dir " DIR
+Local directory path for Static Application Security Testing (SAST)
+.SS "Scan Profiles"
+.TP
+.BI \-\-profile " PROFILE
+Scan profile: quick, standard, deep, aggressive, passive, api, owasp, full
+.TP
+.B
+\-\-deep
+Deep scan mode (shortcut for \-\-profile deep)
+.TP
+.B
+\-\-full
+Full scan: all modules, max depth, API scan, compliance, PDF report
+.SS "Module Selection"
+.TP
+.BI \-\-modules " MODULES
+Comma-separated list of modules to run
+.TP
+.BI \-\-exclude\-modules " MODULES
+Comma-separated list of modules to exclude
+.TP
+.B
+\-\-list\-modules
+List all available scan modules and exit
+.SS "Scan Configuration"
+.TP
+.BI \-\-depth " DEPTH
+Crawl depth (default: 3)
+.TP
+.BI \-\-timeout " SECONDS
+Request timeout in seconds (default: 10)
+.TP
+.BI \-\-threads " NUM
+Number of threads (default: 10)
+.TP
+.BI \-\-rate\-limit " NUM
+Max requests per second (0 = unlimited)
+.SS "Authentication"
+.TP
+.BI \-\-auth\-url " URL
+Login page URL for authenticated scanning
+.TP
+.BI \-u " USERNAME" "\fR,\fP \-\-username " USERNAME
+Username for authenticated scanning
+.TP
+.BI \-p " PASSWORD" "\fR,\fP \-\-password " PASSWORD
+Password for authenticated scanning
+.TP
+.BI \-\-password\-file " FILE
+Read password from file
+.TP
+.BI \-\-cookie " COOKIE
+Custom cookie (format: name=value; name2=value2)
+.TP
+.BI \-\-header " HEADER
+Custom header (format: Name: Value)
+.SS "Proxy & Evasion"
+.TP
+.BI \-\-proxy " PROXY
+HTTP/SOCKS proxy (e.g., http://127.0.0.1:8080, socks5://127.0.0.1:9050)
+.TP
+.B
+\-\-anm
+Enable Adaptive Network Masking (auto-rotate identity on block)
+.TP
+.B
+\-\-tor
+Route traffic through Tor SOCKS5 proxy (127.0.0.1:9050)
+.TP
+.BI \-\-tor\-control\-port " PORT
+Tor ControlPort for identity renewal (default: 9051)
+.TP
+.BI \-\-tor\-password " PASSWORD
+Tor ControlPort authentication password
+.TP
+.BI \-\-proxy\-pool " FILE
+File with newline-delimited proxy list for round-robin rotation
+.TP
+.B
+\-\-rotate\-mac
+Enable MAC address rotation (Linux, requires root)
+.TP
+.B
+\-\-rotate\-ua
+Enable User-Agent fingerprint rotation
+.SS "Scope Control"
+.TP
+.BI \-\-scope\-include " PATTERN
+Regex pattern for URLs to include in scope
+.TP
+.BI \-\-scope\-exclude " PATTERN
+Regex pattern for URLs to exclude from scope
+.TP
+.B
+\-\-no\-ssl\-verify
+Skip SSL certificate verification
+.TP
+.BI \-\-user\-agent " UA
+Custom User-Agent string
+.SS "Output Options"
+.TP
+.BI \-o " FILE" "\fR,\fP \-\-output " FILE
+Output report file (default: reconstrike_report.html)
+.TP
+.BI \-\-pdf " FILE
+Generate professional PDF report
+.TP
+.B
+\-\-json
+Output results as JSON to stdout
+.TP
+.BI \-\-json\-file " FILE
+Save JSON results to file
+.TP
+.B
+\-\-diff
+Compare results with previous scan
+.TP
+.B
+\-\-compliance
+Include OWASP Top 10 & PCI DSS compliance report
+.TP
+.B
+\-\-api\-scan
+Enable API endpoint discovery and testing
+.SS "CI/CD Integration"
+.TP
+.B
+\-\-ci
+CI/CD mode: exit code reflects severity (1=critical, 2=high, 3=medium)
+.TP
+.BI \-\-severity\-threshold " LEVEL
+Minimum severity to report in CI mode: CRITICAL, HIGH, MEDIUM, LOW (default: MEDIUM)
+.SS "Logging & Display"
+.TP
+.B
+\-q\fR,\fP \-\-quiet
+Minimal output (findings only)
+.TP
+.B
+\-v\fR,\fP \-\-verbose
+Verbose output
+.TP
+.B
+\-\-no\-color
+Disable colored output
+.TP
+.BI \-\-log\-file " FILE
+Write log output to file
+.TP
+.B
+\-\-version
+Show version information and exit
+.SH SCAN PROFILES
+.TP
+.B quick
+Fast reconnaissance scan (5 modules, depth 2)
+.TP
+.B standard
+Standard full scan (all modules, depth 3)
+.TP
+.B deep
+Deep scan (all modules, depth 5, extra checks)
+.TP
+.B aggressive
+Aggressive scan (all modules, depth 7, max coverage)
+.TP
+.B passive
+Passive scan (no injection tests, no active probing)
+.TP
+.B api
+API-focused scan (injection + auth + JWT modules)
+.TP
+.B owasp
+OWASP Top 10 coverage scan
+.TP
+.B full
+Maximum scan (all modules, depth 7, API scan, compliance, PDF report)
+.SH EXAMPLES
+Basic scan:
+.PP
+.RS 4
+reconstrike \-t https://example.com
+.RE
+.PP
+Deep scan with compliance:
+.PP
+.RS 4
+reconstrike \-t https://example.com \-\-profile deep \-\-compliance
+.RE
+.PP
+API-focused scan:
+.PP
+.RS 4
+reconstrike \-t https://api.example.com \-\-profile api \-\-api\-scan
+.RE
+.PP
+Authenticated scan:
+.PP
+.RS 4
+reconstrike \-t https://example.com \-\-auth\-url https://example.com/login \-u admin \-p secret
+.RE
+.PP
+With Tor proxy:
+.PP
+.RS 4
+reconstrike \-t https://example.com \-\-tor \-\-anm
+.RE
+.PP
+JSON output for automation:
+.PP
+.RS 4
+reconstrike \-t https://example.com \-\-json \-\-json\-file results.json
+.RE
+.SH EXIT CODES
+.TP
+.B 0
+No findings above threshold
+.TP
+.B 1
+Critical findings detected
+.TP
+.B 2
+High findings detected
+.TP
+.B 3
+Medium findings detected
+.SH FILES
+.TP
+.I /usr/share/reconstrike/
+Main application directory
+.TP
+.I /usr/share/reconstrike/scanner/
+Scanner modules and core library
+.SH AUTHOR
+CypherSec <cyphersec.404@gmail.com>
+.SH COPYRIGHT
+MIT License
+.SH SEE ALSO
+.BR nikto (1),
+.BR nmap (1),
+.BR wapiti (1)

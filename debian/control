@@ -1,17 +1,33 @@
 Source: reconstrike
 Section: net
 Priority: optional
-Maintainer: Un-9oon <cyphersec.404@gmail.com>
+Maintainer: CypherSec <cyphersec.404@gmail.com>
 Build-Depends: debhelper-compat (= 13), python3, python3-setuptools, dh-python
 Standards-Version: 4.6.2
-Homepage: https://github.com/Un-9oon/ReconStrike
+Homepage: https://github.com/cyphersec-404/ReconStrike
+Vcs-Browser: https://github.com/cyphersec-404/ReconStrike
+Vcs-Git: https://github.com/cyphersec-404/ReconStrike.git
 
 Package: reconstrike
 Architecture: all
-Depends: ${python3:Depends}, ${misc:Depends}, python3-requests, python3-bs4, python3-colorama, python3-dnspython
-Recommends: python3-fpdf2, nmap
-Description: Advanced Web Vulnerability Assessment Framework
- ReconStrike is a professional web vulnerability scanner with 43 scan
- modules covering OWASP Top 10, injection attacks, authentication flaws,
- client-side vulnerabilities, and advanced threats including zero-day
- heuristic fuzzing and CVE correlation.
+Depends: ${python3:Depends}, ${misc:Depends}, python3-requests, python3-bs4, python3-colorama, python3-dnspython, python3-urllib3
+Recommends: python3-fpdf2, nmap, tor
+Suggests: python3-pytest
+Description: Advanced Web & Network Vulnerability Assessment Framework
+ ReconStrike is a professional-grade vulnerability scanner designed for
+ penetration testers, security auditors, and DevSecOps teams. It performs
+ comprehensive security assessments against web applications and network
+ endpoints using 43 specialized scan modules.
+ .
+ Key features include:
+  * 43 vulnerability scan modules covering OWASP Top 10 and beyond
+  * Zero false positive architecture with baseline comparison
+  * Concurrent multi-threaded crawler (5-10x faster)
+  * WAF/CDN detection (Cloudflare, AWS WAF, Akamai, Imperva, etc.)
+  * Technology stack fingerprinting
+  * Adaptive Network Masking (ANM) with Tor, proxy pool, MAC rotation
+  * OWASP Top 10 & PCI DSS v4.0 compliance mapping
+  * Scan diffing to track remediation progress
+  * HTML, PDF, and JSON report generation
+  * CI/CD integration with exit codes based on severity thresholds
+  * Authenticated scanning with auto-login support

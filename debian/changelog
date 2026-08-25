@@ -3,5 +3,8 @@ reconstrike (3.1.0-1) unstable; urgency=medium
   * Initial Debian packaging
   * 43 scan modules with full OWASP Top 10 coverage
   * Enterprise logging, test suite, CI/CD
+  * Adaptive Network Masking (ANM) for WAF evasion
+  * OWASP Top 10 & PCI DSS v4.0 compliance mapping
+  * HTML/PDF/JSON report generation
 
- -- Un-9oon <cyphersec.404@gmail.com>  Fri, 25 Jul 2026 12:00:00 +0500
+ -- CypherSec <cyphersec.404@gmail.com>  Fri, 25 Jul 2026 12:00:00 +0500
