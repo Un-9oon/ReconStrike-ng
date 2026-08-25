@@ -13,6 +13,7 @@ import requests
 from colorama import Fore, Style
 
 from scanner.log import logger
+from scanner.identity_manager import IdentityManager, ANMConfig
 
 
 class Severity(Enum):
@@ -121,6 +122,7 @@ class ScanConfig:
     rate_limit: float = 0
     scope_include: str = ""
     scope_exclude: str = ""
+    anm_config: ANMConfig = field(default_factory=ANMConfig)
 
 
 MAX_RESPONSE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -194,6 +196,24 @@ class ScanSession:
         self._consecutive_blocks = 0
         self._warned_block = False
         self._warned_fail = False
+
+        # Adaptive Network Masking (ANM) — identity rotation engine
+        self.identity_manager: Optional[IdentityManager] = None
+        if config.anm_config.enabled:
+            self.identity_manager = IdentityManager(config.anm_config)
+            # Apply initial identity (proxy + UA) to the session
+            self.identity_manager.apply_to_session(self.session)
+            logger.info("ANM: Adaptive Network Masking ACTIVE")
+            if config.anm_config.use_tor:
+                logger.info("ANM: Traffic routed through Tor (SOCKS5 %s:%d)",
+                            config.anm_config.tor_socks_host, config.anm_config.tor_socks_port)
+            if config.anm_config.proxy_pool:
+                logger.info("ANM: Proxy pool loaded (%d proxies)", len(config.anm_config.proxy_pool))
+            if config.anm_config.rotate_mac:
+                logger.info("ANM: MAC rotation enabled on interface %s",
+                            config.anm_config.network_interface)
+            if config.anm_config.rotate_ua:
+                logger.info("ANM: User-Agent rotation enabled")
 
     def authenticate(self) -> bool:
         if not self.config.auth_url:
@@ -315,8 +335,17 @@ class ScanSession:
                         "High request failure rate / timeouts detected (5+ failed requests). "
                         "Target host may be dropping connections or firewalling your IP."
                     )
+                # ANM: Signal connection failure for identity rotation
+                if self.identity_manager:
+                    rotated = self.identity_manager.signal_connection_fail()
+                    if rotated:
+                        self.identity_manager.apply_to_session(self.session)
+                        self._warned_fail = False  # reset warning after rotation
+                        self._consecutive_fails = 0
+                        logger.info("ANM: Identity rotated after connection failures. Resuming scan.")
             else:
                 self._consecutive_fails = 0
+
                 if resp.status_code in (429, 403):
                     self._consecutive_blocks += 1
                     if self._consecutive_blocks >= 3 and not self._warned_block:
@@ -326,11 +355,33 @@ class ScanSession:
                             "Target WAF or rate-limiter is actively blocking/throttling requests.",
                             resp.status_code,
                         )
-                        # Auto-Evasion: Automatically back off
-                        logger.info("AUTO-EVASION: Adaptive throttling engaged. Delaying requests to bypass WAF...")
-                        self.config.rate_limit = 0.5
+
+                    # ANM: Signal block event for identity rotation
+                    if self.identity_manager:
+                        rotated = self.identity_manager.signal_block(resp.status_code)
+                        if rotated:
+                            self.identity_manager.apply_to_session(self.session)
+                            self._warned_block = False  # reset warning after rotation
+                            self._consecutive_blocks = 0
+                            logger.info(
+                                "ANM: Identity rotated after HTTP %s blocks. Resuming scan.",
+                                resp.status_code,
+                            )
+                        else:
+                            # Fallback: adaptive throttling if ANM can't rotate
+                            if self._consecutive_blocks >= 3:
+                                logger.info("AUTO-EVASION: Adaptive throttling engaged. Delaying requests to bypass WAF...")
+                                self.config.rate_limit = max(self.config.rate_limit, 0.5)
+                    else:
+                        # No ANM — use legacy throttle-only evasion
+                        if self._consecutive_blocks >= 3:
+                            logger.info("AUTO-EVASION: Adaptive throttling engaged. Delaying requests to bypass WAF...")
+                            self.config.rate_limit = 0.5
                 else:
                     self._consecutive_blocks = 0
+                    # ANM: Reset block/fail counters only on genuine success
+                    if self.identity_manager:
+                        self.identity_manager.reset_counters()
 
     def _in_scope(self, url: str) -> bool:
         if self._scope_exclude_re:

@@ -10,6 +10,7 @@ from colorama import Fore, Style, init as colorama_init
 
 from scanner.log import setup_logging, logger
 from scanner.core import ScanConfig, ScanSession, Severity
+from scanner.identity_manager import ANMConfig
 from scanner.concurrent import ConcurrentCrawler
 from scanner.reporter import generate_html_report, print_summary
 from scanner.diff_scan import save_scan_results, load_previous_scan, compute_diff, print_diff
@@ -181,6 +182,20 @@ Examples:
     parser.add_argument("--scope-exclude", help="Regex pattern for URLs to exclude from scope")
     parser.add_argument("--no-ssl-verify", action="store_true", default=False, help="Skip SSL certificate verification")
     parser.add_argument("--user-agent", default=f"ReconStrike/{VERSION} (Security Audit)", help="Custom User-Agent")
+
+    # Adaptive Network Masking (ANM) — runtime identity rotation
+    anm_group = parser.add_argument_group("Adaptive Network Masking (ANM)",
+                                           "Runtime IP/MAC/UA rotation to evade blocking during scans")
+    anm_group.add_argument("--anm", action="store_true", help="Enable Adaptive Network Masking (auto-rotate identity on block)")
+    anm_group.add_argument("--tor", action="store_true", help="Route traffic through Tor SOCKS5 proxy (127.0.0.1:9050)")
+    anm_group.add_argument("--tor-control-port", type=int, default=9051, help="Tor ControlPort for identity renewal (default: 9051)")
+    anm_group.add_argument("--tor-password", default="", help="Tor ControlPort authentication password")
+    anm_group.add_argument("--proxy-pool", help="File with newline-delimited proxy list for round-robin rotation")
+    anm_group.add_argument("--rotate-mac", action="store_true", help="Enable MAC address rotation (Linux, requires root)")
+    anm_group.add_argument("--rotate-ua", action="store_true", default=False, help="Enable User-Agent fingerprint rotation")
+    anm_group.add_argument("--anm-interface", default="", help="Network interface for MAC rotation (auto-detected if empty)")
+    anm_group.add_argument("--anm-cooldown", type=float, default=3.0, help="Seconds to wait after identity rotation (default: 3)")
+    anm_group.add_argument("--anm-max-rotations", type=int, default=50, help="Maximum identity rotations per scan (default: 50)")
 
     parser.add_argument("--pdf", help="Generate professional PDF report (e.g., --pdf report.pdf)")
     parser.add_argument("--json", dest="json_output", action="store_true", help="Output results as JSON to stdout")
@@ -416,6 +431,21 @@ def main():
     selected_modules, depth_override = _resolve_modules(args)
     depth = depth_override if depth_override else args.depth
 
+    # Build Adaptive Network Masking config
+    anm_enabled = args.anm or args.tor or args.proxy_pool or args.rotate_mac or args.rotate_ua
+    anm_cfg = ANMConfig(
+        enabled=anm_enabled,
+        use_tor=args.tor,
+        tor_control_port=args.tor_control_port,
+        tor_password=args.tor_password,
+        proxy_pool_file=args.proxy_pool or "",
+        rotate_mac=args.rotate_mac,
+        network_interface=args.anm_interface,
+        rotate_ua=args.rotate_ua or args.anm,  # UA rotation on by default if ANM enabled
+        cooldown_after_block=args.anm_cooldown,
+        max_rotations_per_scan=args.anm_max_rotations,
+    )
+
     config = ScanConfig(
         target=target,
         threads=args.threads,
@@ -433,6 +463,7 @@ def main():
         rate_limit=args.rate_limit,
         scope_include=args.scope_include or "",
         scope_exclude=args.scope_exclude or "",
+        anm_config=anm_cfg,
     )
 
     session = ScanSession(config)
@@ -452,6 +483,17 @@ def main():
             logger.info("Proxy      : %s", args.proxy)
         if args.rate_limit:
             logger.info("Rate Limit : %s req/s", args.rate_limit)
+        if anm_enabled:
+            anm_methods = []
+            if args.tor:
+                anm_methods.append("Tor")
+            if args.proxy_pool:
+                anm_methods.append("ProxyPool")
+            if args.rotate_mac:
+                anm_methods.append("MAC")
+            if anm_cfg.rotate_ua:
+                anm_methods.append("UA")
+            logger.info("ANM        : ACTIVE [%s]", ", ".join(anm_methods))
 
     if args.target:
         resp = session.get(target)
@@ -575,6 +617,16 @@ def main():
 
     if not args.quiet:
         logger.info("Scan completed in %.1f seconds", duration)
+
+    # ANM: Clean up (restore original MAC, log rotation summary)
+    if session.identity_manager:
+        anm_summary = session.identity_manager.get_summary()
+        if anm_summary["total_rotations"] > 0 and not args.quiet:
+            logger.info("ANM: Total identity rotations: %d", anm_summary["total_rotations"])
+            for entry in anm_summary["history"]:
+                logger.info("  ├─ %s | trigger=%s | actions=[%s]",
+                            entry["timestamp"], entry["trigger"], ", ".join(entry["actions"]))
+        session.identity_manager.shutdown()
 
     if args.ci:
         code = _ci_exit_code(session, args.severity_threshold)
