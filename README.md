@@ -12,6 +12,12 @@ ReconStrike is a professional-grade vulnerability scanner built in Python that p
 
 ---
 
+<p align="center">
+  <img src="https://via.placeholder.com/800x450/0f172a/4ade80?text=Terminal+Preview+Goes+Here+(Upload+a+.gif)" alt="ReconStrike Terminal Preview">
+</p>
+
+---
+
 ## Features
 
 ### Core Scanning Engine
@@ -55,8 +61,8 @@ ReconStrike is a professional-grade vulnerability scanner built in Python that p
 ## Installation
 
 ```bash
-git clone https://github.com/cyphersec-404/ReconStrike.git
-cd ReconStrike
+git clone https://github.com/Un-9oon/ReconStrike-ng.git
+cd ReconStrike-ng
 pip install -r requirements.txt
 ```
 
@@ -206,13 +212,13 @@ jobs:
 
       - name: Install ReconStrike
         run: |
-          git clone https://github.com/cyphersec-404/ReconStrike.git
-          cd ReconStrike
+          git clone https://github.com/Un-9oon/ReconStrike-ng.git
+          cd ReconStrike-ng
           pip install -r requirements.txt
 
       - name: Run security scan
         run: |
-          cd ReconStrike
+          cd ReconStrike-ng
           python3 reconstrike.py \
             -t ${{ vars.SCAN_TARGET }} \
             --profile quick \
@@ -227,7 +233,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: security-scan-results
-          path: ReconStrike/results.json
+          path: ReconStrike-ng/results.json
 ```
 
 Exit codes: `0` = no findings above threshold, `1` = critical findings, `2` = high findings.
