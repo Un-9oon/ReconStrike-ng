@@ -11,7 +11,6 @@ install:
 	mkdir -p $(DESTDIR)$(DOCDIR)
 	cp -r scanner/ $(DESTDIR)$(SHAREDIR)/
 	cp reconstrike.py $(DESTDIR)$(SHAREDIR)/
-	cp requirements.txt $(DESTDIR)$(SHAREDIR)/
 	ln -sf $(SHAREDIR)/reconstrike.py $(DESTDIR)$(BINDIR)/reconstrike
 	cp README.md LICENSE CHANGELOG.md $(DESTDIR)$(DOCDIR)/
 	chmod +x $(DESTDIR)$(SHAREDIR)/reconstrike.py

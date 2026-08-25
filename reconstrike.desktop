@@ -5,5 +5,5 @@ Exec=reconstrike
 Icon=utilities-terminal
 Terminal=true
 Type=Application
-Categories=03-webapp-analysis;
+Categories=03-webapp-analysis;11-sniffing-spoofing;
 Keywords=vulnerability;scanner;pentest;security;

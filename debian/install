@@ -1,4 +1,1 @@
-reconstrike.py /usr/share/reconstrike/
-scanner/ /usr/share/reconstrike/
-requirements.txt /usr/share/reconstrike/
-debian/reconstrike.1 /usr/share/man/man1/
+reconstrike.desktop /usr/share/applications/
