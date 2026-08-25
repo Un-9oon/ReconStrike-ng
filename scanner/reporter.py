@@ -280,7 +280,7 @@ def print_summary(session: ScanSession):
     for severity in Severity:
         count = sum(1 for f in findings if f.severity == severity)
         if count:
-            print(f"  {severity.color}{severity.value:10s}: {count}{'\033[0m'}")
+            print(f"  {severity.color}{severity.value:10s}: {count}\033[0m")
 
     confirmed = sum(1 for f in findings if f.confirmed)
     print(f"  {'─'*60}")
