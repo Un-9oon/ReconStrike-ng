@@ -42,9 +42,9 @@ dev = ["pytest", "pytest-cov", "flake8", "mypy", "black"]
 reconstrike = "reconstrike:main"
 
 [project.urls]
-Homepage = "https://github.com/cyphersec-404/ReconStrike"
-Repository = "https://github.com/cyphersec-404/ReconStrike"
-Issues = "https://github.com/cyphersec-404/ReconStrike/issues"
+Homepage = "https://github.com/cyphersec-404/ReconStrike-ng"
+Repository = "https://github.com/cyphersec-404/ReconStrike-ng"
+Issues = "https://github.com/cyphersec-404/ReconStrike-ng/issues"
 
 [tool.setuptools.dynamic]
 version = { attr = "scanner.__version__" }

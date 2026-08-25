@@ -120,7 +120,7 @@ def generate_html_report(session: ScanSession, output_path: str, compliance_data
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ReconStrike Report - {html.escape(session.config.target)}</title>
+<title>ReconStrike-ng Report - {html.escape(session.config.target)}</title>
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:#0f172a; color:#e2e8f0; line-height:1.6; }}
@@ -170,7 +170,7 @@ table tr:hover {{ background:#1a2744; }}
 <body>
 <div class="container">
     <div class="header">
-        <h1>ReconStrike Security Assessment Report</h1>
+        <h1>ReconStrike-ng Security Assessment Report</h1>
         <div class="subtitle">Target: {html.escape(session.config.target)}</div>
         <div class="subtitle">Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}</div>
         <div class="subtitle">Modules: {html.escape(modules_scanned[:100])}</div>
@@ -253,7 +253,7 @@ table tr:hover {{ background:#1a2744; }}
     {_findings_summary_html(findings, severity_colors) if findings else ''}
 
     <div class="footer">
-        ReconStrike v3.0 Security Assessment Framework &mdash; For authorized testing only<br>
+        ReconStrike-ng v3.0 Security Assessment Framework &mdash; For authorized testing only<br>
         Report generated on {datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M UTC')}
     </div>
 </div>

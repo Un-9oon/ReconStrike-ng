@@ -109,7 +109,7 @@ class ScanConfig:
     threads: int = 10
     timeout: int = 10
     depth: int = 3
-    user_agent: str = "ReconStrike/3.0 (Security Audit)"
+    user_agent: str = "ReconStrike-ng/3.0 (Security Audit)"
     auth_url: str = ""
     auth_username: str = ""
     auth_password: str = ""

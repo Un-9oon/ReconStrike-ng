@@ -4,9 +4,9 @@ Priority: optional
 Maintainer: CypherSec <cyphersec.404@gmail.com>
 Build-Depends: debhelper-compat (= 13), python3, python3-setuptools, dh-python
 Standards-Version: 4.6.2
-Homepage: https://github.com/cyphersec-404/ReconStrike
-Vcs-Browser: https://github.com/cyphersec-404/ReconStrike
-Vcs-Git: https://github.com/cyphersec-404/ReconStrike.git
+Homepage: https://github.com/cyphersec-404/ReconStrike-ng
+Vcs-Browser: https://github.com/cyphersec-404/ReconStrike-ng
+Vcs-Git: https://github.com/cyphersec-404/ReconStrike-ng.git
 
 Package: reconstrike
 Architecture: all
@@ -14,7 +14,7 @@ Depends: ${python3:Depends}, ${misc:Depends}, python3-requests, python3-bs4, pyt
 Recommends: python3-fpdf2, nmap, tor
 Suggests: python3-pytest
 Description: Advanced Web & Network Vulnerability Assessment Framework
- ReconStrike is a professional-grade vulnerability scanner designed for
+ ReconStrike-ng is a professional-grade vulnerability scanner designed for
  penetration testers, security auditors, and DevSecOps teams. It performs
  comprehensive security assessments against web applications and network
  endpoints using 43 specialized scan modules.

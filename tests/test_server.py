@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deliberately vulnerable test server for ReconStrike accuracy testing."""
+"""Deliberately vulnerable test server for ReconStrike-ng accuracy testing."""
 import http.server
 import json
 import urllib.parse

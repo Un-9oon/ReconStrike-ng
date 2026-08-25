@@ -20,7 +20,7 @@ setup(
     long_description_content_type="text/markdown",
     author="CypherSec",
     author_email="cyphersec.404@gmail.com",
-    url="https://github.com/cyphersec-404/ReconStrike",
+    url="https://github.com/cyphersec-404/ReconStrike-ng",
     packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[

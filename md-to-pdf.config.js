@@ -129,7 +129,7 @@ module.exports = {
     format: 'A4',
     margin: { top: '25mm', right: '25mm', bottom: '25mm', left: '25mm' },
     displayHeaderFooter: true,
-    headerTemplate: '<div style="font-size: 9px; font-family: \'Open Sans\', sans-serif; width: 100%; text-align: right; padding-right: 25mm; color: #718096; border-bottom: 1px solid #E2E8F0; padding-bottom: 5px;">ReconStrike - Enterprise Security Technical Report</div>',
+    headerTemplate: '<div style="font-size: 9px; font-family: \'Open Sans\', sans-serif; width: 100%; text-align: right; padding-right: 25mm; color: #718096; border-bottom: 1px solid #E2E8F0; padding-bottom: 5px;">ReconStrike-ng - Enterprise Security Technical Report</div>',
     footerTemplate: '<div style="font-size: 9px; font-family: \'Open Sans\', sans-serif; width: 100%; display: flex; justify-content: space-between; padding: 0 25mm; color: #A0AEC0;"><span class="date"></span><span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>'
   }
 };

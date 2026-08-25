@@ -1,4 +1,4 @@
-"""Tests for the ReconStrike CLI entry point."""
+"""Tests for the ReconStrike-ng CLI entry point."""
 
 import subprocess
 import sys
@@ -13,7 +13,7 @@ def run_cli(*args, timeout=10):
         capture_output=True,
         text=True,
         timeout=timeout,
-        cwd="/home/we/ReconStrike",
+        cwd="/home/we/ReconStrike-ng",
     )
 
 
@@ -21,7 +21,7 @@ class TestCLI:
     def test_version_flag(self):
         result = run_cli("--version")
         assert result.returncode == 0
-        assert "ReconStrike" in result.stdout or "3.0" in result.stdout
+        assert "ReconStrike-ng" in result.stdout or "3.0" in result.stdout
 
     def test_help_flag(self):
         result = run_cli("--help")

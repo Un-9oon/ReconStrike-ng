@@ -140,7 +140,7 @@ SCAN_PROFILES = {
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="ReconStrike - Advanced Web & Network Vulnerability Assessment Framework",
+        description="ReconStrike-ng - Advanced Web & Network Vulnerability Assessment Framework",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Scan Profiles:
@@ -181,7 +181,7 @@ Examples:
     parser.add_argument("--scope-include", help="Regex pattern for URLs to include in scope")
     parser.add_argument("--scope-exclude", help="Regex pattern for URLs to exclude from scope")
     parser.add_argument("--no-ssl-verify", action="store_true", default=False, help="Skip SSL certificate verification")
-    parser.add_argument("--user-agent", default=f"ReconStrike/{VERSION} (Security Audit)", help="Custom User-Agent")
+    parser.add_argument("--user-agent", default=f"ReconStrike-ng/{VERSION} (Security Audit)", help="Custom User-Agent")
 
     # Adaptive Network Masking (ANM) — runtime identity rotation
     anm_group = parser.add_argument_group("Adaptive Network Masking (ANM)",
@@ -211,7 +211,7 @@ Examples:
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
     parser.add_argument("--log-file", help="Write log output to file")
     parser.add_argument("--list-modules", action="store_true", help="List all available scan modules and exit")
-    parser.add_argument("--version", action="version", version=f"ReconStrike v{VERSION}")
+    parser.add_argument("--version", action="version", version=f"ReconStrike-ng v{VERSION}")
 
     return parser.parse_args()
 
@@ -368,7 +368,7 @@ def main():
         os.environ["NO_COLOR"] = "1"
 
     if args.list_modules:
-        print(f"ReconStrike v{VERSION} - Available Scan Modules:\n")
+        print(f"ReconStrike-ng v{VERSION} - Available Scan Modules:\n")
         for key, (description, _) in ALL_MODULES.items():
             print(f"  {key:24s} {description}")
         print(f"\nTotal: {len(ALL_MODULES)} modules")

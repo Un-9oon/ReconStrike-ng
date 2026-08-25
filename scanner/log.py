@@ -1,4 +1,4 @@
-"""Centralized logging for ReconStrike."""
+"""Centralized logging for ReconStrike-ng."""
 
 import logging
 import sys
