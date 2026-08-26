@@ -204,7 +204,7 @@ class HistoryDB:
         har = {
             "log": {
                 "version": "1.2",
-                "creator": {"name": "ReconStrike-ng DAST Proxy", "version": "1.0"},
+                "creator": {"name": "ReconStrike DAST Proxy", "version": "1.0"},
                 "entries": entries,
             }
         }

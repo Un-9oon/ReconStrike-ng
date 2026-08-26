@@ -36,7 +36,7 @@ def _ensure_cryptography():
 
 
 def generate_root_ca(ca_dir: Path | str | None = None,
-                     cn: str = "ReconStrike-ng DAST Proxy CA",
+                     cn: str = "ReconStrike DAST Proxy CA",
                      validity_days: int = 3650) -> tuple[Path, Path]:
     """Generate a self-signed Root CA key and certificate.
 
@@ -75,7 +75,7 @@ def generate_root_ca(ca_dir: Path | str | None = None,
     # Build the CA certificate
     subject = issuer = x509.Name([
         x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "ReconStrike-ng Security"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "ReconStrike Security"),
         x509.NameAttribute(NameOID.COMMON_NAME, cn),
     ])
 

@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: reconstrike
-Source: https://github.com/cyphersec-404/ReconStrike-ng
+Source: https://github.com/Un-9oon/ReconStrike
 
 Files: *
 Copyright: 2026 CypherSec <cyphersec.404@gmail.com>

@@ -101,7 +101,7 @@ class TestHistoryDB(unittest.TestCase):
             har = json.load(f)
 
         self.assertIn("log", har)
-        self.assertEqual(har["log"]["creator"]["name"], "ReconStrike-ng DAST Proxy")
+        self.assertEqual(har["log"]["creator"]["name"], "ReconStrike DAST Proxy")
         self.assertEqual(len(har["log"]["entries"]), 1)
         self.assertEqual(har["log"]["entries"][0]["request"]["url"],
                          "https://example.com/test")

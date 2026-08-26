@@ -63,7 +63,7 @@ class TestGenerateHtmlReport:
         with open(result) as f:
             html = f.read()
         assert "<!DOCTYPE html>" in html
-        assert "ReconStrike-ng" in html
+        assert "ReconStrike" in html
 
     def test_report_contains_findings(self, session_with_findings, tmp_path):
         output = str(tmp_path / "report.html")

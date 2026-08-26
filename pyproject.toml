@@ -37,17 +37,21 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "flake8", "mypy", "black"]
+proxy = ["cryptography>=42.0.0", "mitmproxy>=10.0.0"]
 
 [project.scripts]
 reconstrike = "reconstrike:main"
 
 [project.urls]
-Homepage = "https://github.com/cyphersec-404/ReconStrike-ng"
-Repository = "https://github.com/cyphersec-404/ReconStrike-ng"
-Issues = "https://github.com/cyphersec-404/ReconStrike-ng/issues"
+Homepage = "https://github.com/Un-9oon/ReconStrike"
+Repository = "https://github.com/Un-9oon/ReconStrike"
+Issues = "https://github.com/Un-9oon/ReconStrike/issues"
 
 [tool.setuptools.dynamic]
 version = { attr = "scanner.__version__" }
+
+[tool.setuptools]
+py-modules = ["reconstrike"]
 
 [tool.setuptools.packages.find]
 include = ["scanner*"]

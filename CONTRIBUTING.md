@@ -1,14 +1,14 @@
-# Contributing to ReconStrike-ng
+# Contributing to ReconStrike
 
-Thank you for your interest in contributing to ReconStrike-ng. This guide will help you get started.
+Thank you for your interest in contributing to ReconStrike. This guide will help you get started.
 
 ## Development Setup
 
 1. Fork and clone the repository:
 
 ```bash
-git clone https://github.com/<your-username>/ReconStrike-ng.git
-cd ReconStrike-ng
+git clone https://github.com/<your-username>/ReconStrike.git
+cd ReconStrike
 ```
 
 2. Create a virtual environment:
@@ -81,7 +81,7 @@ def run(session):
                     description="What was found and why it matters.",
                     evidence="The specific response data proving the issue",
                     remediation="How to fix this vulnerability.",
-                    detection_method="How ReconStrike-ng detected this issue",
+                    detection_method="How ReconStrike detected this issue",
                 )
                 findings.append(finding)
 
@@ -169,12 +169,12 @@ git commit -m "Add module_name scan module for detecting X"
 
 ## Security Vulnerability Reporting
 
-If you discover a security vulnerability in ReconStrike-ng itself (not in a target being scanned), **do not open a public issue**.
+If you discover a security vulnerability in ReconStrike itself (not in a target being scanned), **do not open a public issue**.
 
 Instead, report it privately:
 
 - Email: cyphersec.404@gmail.com
-- Subject: `[SECURITY] ReconStrike-ng vulnerability report`
+- Subject: `[SECURITY] ReconStrike vulnerability report`
 - Include: description, reproduction steps, and impact assessment
 
 You will receive a response within 48 hours. We will coordinate disclosure after a fix is available.

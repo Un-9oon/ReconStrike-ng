@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from fpdf import FPDF
 
 from scanner.core import ScanSession, Severity, Finding
+from scanner import __version__
 
 
 SEVERITY_COLORS = {
@@ -31,7 +32,7 @@ def _sanitize(text: str) -> str:
             .encode("latin-1", errors="replace").decode("latin-1"))
 
 
-class ReconStrike-ngPDF(FPDF):
+class ReconStrikePDF(FPDF):
     def __init__(self, target: str):
         super().__init__()
         self.target = target
@@ -46,7 +47,7 @@ class ReconStrike-ngPDF(FPDF):
     def header(self):
         self.set_font("Helvetica", "B", 9)
         self.set_text_color(120, 120, 120)
-        super().cell(0, 6, "ReconStrike-ng v3.0 - Security Assessment Report", align="L")
+        super().cell(0, 6, f"ReconStrike v{__version__} - Security Assessment Report", align="L")
         super().cell(0, 6, _sanitize(self.target[:60]), align="R", new_x="LMARGIN", new_y="NEXT")
         self.set_draw_color(200, 200, 200)
         self.line(10, self.get_y(), 200, self.get_y())
@@ -140,7 +141,7 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     risk_score = _calculate_risk_score(findings)
     risk_label = _risk_label(risk_score)
 
-    pdf = ReconStrike-ngPDF(session.config.target)
+    pdf = ReconStrikePDF(session.config.target)
     pdf.alias_nb_pages()
     pdf.add_page()
 
@@ -151,7 +152,7 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     pdf.cell(0, 15, "Security Assessment Report", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 12)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 8, "ReconStrike-ng — Advanced Web & Network Vulnerability Assessment", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, "ReconStrike — Advanced Web & Network Vulnerability Assessment", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     pdf.set_draw_color(59, 130, 246)
     pdf.set_line_width(0.8)
@@ -570,7 +571,7 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(51, 65, 85)
     pdf.multi_cell(0, 5, (
-        "This assessment was conducted using ReconStrike-ng v3.0, an automated vulnerability "
+        f"This assessment was conducted using ReconStrike v{__version__}, an automated vulnerability "
         "assessment framework. The tool employs the following techniques to ensure accuracy "
         "and eliminate false positives:\n\n"
         "Baseline Comparison: For all injection tests (SQLi, XSS, SSTI, LFI, Command Injection, "

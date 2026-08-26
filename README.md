@@ -1,8 +1,8 @@
-# ReconStrike-ng
+# ReconStrike
 
 **Advanced Web & Network Vulnerability Assessment Framework**
 
-ReconStrike-ng is a professional-grade vulnerability scanner built in Python that performs comprehensive security assessments against web applications and network endpoints. Designed for penetration testers, security auditors, and DevSecOps teams.
+ReconStrike is a professional-grade vulnerability scanner built in Python that performs comprehensive security assessments against web applications and network endpoints. Designed for penetration testers, security auditors, and DevSecOps teams.
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Modules](https://img.shields.io/badge/scan%20modules-43-green.svg)
@@ -13,7 +13,7 @@ ReconStrike-ng is a professional-grade vulnerability scanner built in Python tha
 ---
 
 <p align="center">
-  <img src="https://via.placeholder.com/800x450/0f172a/4ade80?text=Terminal+Preview+Goes+Here+(Upload+a+.gif)" alt="ReconStrike-ng Terminal Preview">
+  <img src="https://via.placeholder.com/800x450/0f172a/4ade80?text=Terminal+Preview+Goes+Here+(Upload+a+.gif)" alt="ReconStrike Terminal Preview">
 </p>
 
 ---
@@ -61,8 +61,8 @@ ReconStrike-ng is a professional-grade vulnerability scanner built in Python tha
 ## Installation
 
 ```bash
-git clone https://github.com/Un-9oon/ReconStrike-ng.git
-cd ReconStrike-ng
+git clone https://github.com/Un-9oon/ReconStrike.git
+cd ReconStrike
 pip install -r requirements.txt
 ```
 
@@ -151,7 +151,7 @@ python3 reconstrike.py -t https://target.com \
 
 ## Logging
 
-ReconStrike-ng uses Python's structured logging system with configurable verbosity:
+ReconStrike uses Python's structured logging system with configurable verbosity:
 
 ```bash
 # Verbose output (DEBUG level)
@@ -187,7 +187,7 @@ python3 reconstrike.py -t https://target.com --verbose --log-file debug.log --no
 
 ## CI/CD Integration
 
-ReconStrike-ng integrates into CI/CD pipelines with exit codes based on severity thresholds:
+ReconStrike integrates into CI/CD pipelines with exit codes based on severity thresholds:
 
 ```yaml
 # .github/workflows/security-scan.yml
@@ -210,15 +210,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install ReconStrike-ng
+      - name: Install ReconStrike
         run: |
-          git clone https://github.com/Un-9oon/ReconStrike-ng.git
-          cd ReconStrike-ng
+          git clone https://github.com/Un-9oon/ReconStrike.git
+          cd ReconStrike
           pip install -r requirements.txt
 
       - name: Run security scan
         run: |
-          cd ReconStrike-ng
+          cd ReconStrike
           python3 reconstrike.py \
             -t ${{ vars.SCAN_TARGET }} \
             --profile quick \
@@ -233,7 +233,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: security-scan-results
-          path: ReconStrike-ng/results.json
+          path: ReconStrike/results.json
 ```
 
 Exit codes: `0` = no findings above threshold, `1` = critical findings, `2` = high findings.
@@ -242,7 +242,7 @@ Exit codes: `0` = no findings above threshold, `1` = critical findings, `2` = hi
 
 ## Compliance
 
-ReconStrike-ng maps findings to industry frameworks:
+ReconStrike maps findings to industry frameworks:
 
 - **OWASP Top 10 (2021)** -- A01 through A10 category mapping with pass/fail
 - **PCI DSS v4.0** -- Requirements 6.5.1 through 6.5.10
@@ -253,7 +253,7 @@ Use `--compliance` to generate the compliance report section in both CLI and HTM
 
 ## Disclaimer
 
-This tool is intended for **authorized security testing only**. Only use ReconStrike-ng against systems you own or have explicit written permission to test. Unauthorized scanning is illegal. The authors are not responsible for misuse.
+This tool is intended for **authorized security testing only**. Only use ReconStrike against systems you own or have explicit written permission to test. Unauthorized scanning is illegal. The authors are not responsible for misuse.
 
 ---
 
