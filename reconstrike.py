@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from colorama import Fore, Style, init as colorama_init
 
 from scanner.log import setup_logging, logger
-from scanner.core import ScanConfig, ScanSession, Severity
+from scanner.core import ScanConfig, ScanSession, Severity, Finding
 from scanner.identity_manager import ANMConfig
 from scanner.concurrent import ConcurrentCrawler
 from scanner.reporter import generate_html_report, print_summary
@@ -197,15 +197,32 @@ Examples:
     anm_group.add_argument("--anm-cooldown", type=float, default=3.0, help="Seconds to wait after identity rotation (default: 3)")
     anm_group.add_argument("--anm-max-rotations", type=int, default=50, help="Maximum identity rotations per scan (default: 50)")
 
+    # Internal Network Scanning
+    net_group = parser.add_argument_group("Network Scanning", "Internal network port scanning and service detection")
+    net_group.add_argument("--network-scan", metavar="TARGET", help="Network scan target (IP, hostname, or CIDR range, e.g. 192.168.1.0/24)")
+    net_group.add_argument("--ports", default="top-1000", help="Port specification: top-1000, 1-65535, 22,80,443, or mixed (default: top-1000)")
+    net_group.add_argument("--scan-speed", type=int, choices=[1, 2, 3, 4, 5], default=3, help="Scan speed 1-5: 1=stealth, 3=normal, 5=insane (default: 3)")
+
+    # DAST Proxy
+    proxy_group = parser.add_argument_group("DAST Proxy", "Interception proxy for passive traffic analysis")
+    proxy_group.add_argument("--dast-proxy", action="store_true", help="Start DAST interception proxy for passive analysis")
+    proxy_group.add_argument("--proxy-port", type=int, default=8087, help="DAST proxy listen port (default: 8087)")
+
     parser.add_argument("--pdf", help="Generate professional PDF report (e.g., --pdf report.pdf)")
     parser.add_argument("--json", dest="json_output", action="store_true", help="Output results as JSON to stdout")
     parser.add_argument("--json-file", help="Save JSON results to file")
     parser.add_argument("--diff", action="store_true", help="Compare results with previous scan")
     parser.add_argument("--compliance", action="store_true", help="Include OWASP Top 10 & PCI DSS compliance report")
     parser.add_argument("--api-scan", action="store_true", help="Enable API endpoint discovery and testing")
+    parser.add_argument("--nikto", action="store_true", help="Run Nikto-style misconfiguration and sensitive file scan")
     parser.add_argument("--ci", action="store_true", help="CI/CD mode: exit code reflects severity (1=critical, 2=high, 3=medium)")
     parser.add_argument("--severity-threshold", choices=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
                         default="MEDIUM", help="Minimum severity to report in CI mode (default: MEDIUM)")
+    stealth_group = parser.add_argument_group("Stealth Mode", "Make scan traffic indistinguishable from real browser sessions")
+    stealth_group.add_argument("--stealth", action="store_true", help="Enable stealth mode (full browser emulation + human timing)")
+    stealth_group.add_argument("--stealth-speed", choices=["slow", "normal", "fast"], default="normal",
+                               help="Stealth timing: slow (3-12s gaps), normal (1-5s), fast (0.3-2s)")
+
     parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output (findings only)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
@@ -390,6 +407,7 @@ def main():
         args.api_scan = True
         args.compliance = True
         args.diff = True
+        args.nikto = True
         if not args.pdf:
             from urllib.parse import urlparse as _urlparse
             domain = _urlparse(args.target).netloc.replace(":", "_") or "target"
@@ -397,6 +415,20 @@ def main():
 
     if not args.quiet:
         print(BANNER)
+
+    # Start DAST interception proxy if requested
+    dast_proxy = None
+    if args.dast_proxy:
+        try:
+            from scanner.proxy.server import ProxyServer
+            dast_proxy = ProxyServer(port=args.proxy_port)
+            dast_proxy.start()
+            if not args.quiet:
+                logger.info("DAST Proxy started on port %d", args.proxy_port)
+                logger.info("Configure your browser to use http://127.0.0.1:%d as proxy", args.proxy_port)
+                logger.info("Import CA cert from: %s", dast_proxy.ca_cert)
+        except ImportError:
+            logger.error("DAST Proxy requires 'cryptography' package: pip install cryptography")
 
     if not args.target and not args.sast_dir:
         logger.error("You must provide either --target (DAST) or --sast-dir (SAST) or both.")
@@ -468,6 +500,13 @@ def main():
 
     session = ScanSession(config)
 
+    stealth_cfg = None
+    if args.stealth:
+        from scanner.stealth import StealthConfig, apply_stealth
+        stealth_cfg = StealthConfig(speed=args.stealth_speed, rotate_profile=True)
+        apply_stealth(session.session, stealth_cfg)
+        session._stealth = stealth_cfg
+
     if args.proxy:
         proxy_dict = {"http": args.proxy, "https": args.proxy}
         session.session.proxies.update(proxy_dict)
@@ -494,6 +533,8 @@ def main():
             if anm_cfg.rotate_ua:
                 anm_methods.append("UA")
             logger.info("ANM        : ACTIVE [%s]", ", ".join(anm_methods))
+        if args.stealth:
+            logger.info("Stealth    : ACTIVE [%s profile, %s timing]", stealth_cfg.profile_name, args.stealth_speed)
 
     if args.target:
         resp = session.get(target)
@@ -538,6 +579,8 @@ def main():
         for mod_key in selected_modules:
             if mod_key in ALL_MODULES:
                 name, module = ALL_MODULES[mod_key]
+                if stealth_cfg:
+                    stealth_cfg.wait()
                 try:
                     if args.verbose:
                         logger.debug("Running DAST: %s", name)
@@ -547,6 +590,15 @@ def main():
                 progress.update(name)
 
         progress.finish()
+
+        if args.nikto:
+            from scanner.nikto.scanner import run as nikto_run
+            if not args.quiet:
+                logger.info("Running Nikto-style misconfiguration scan...")
+            try:
+                nikto_run(session)
+            except Exception as e:
+                logger.error("Nikto scan error: %s", e)
 
         if args.api_scan:
             scan_api_endpoints(session)
@@ -560,6 +612,77 @@ def main():
             logger.info("RUNNING SAST MODULES on %s", args.sast_dir)
             logger.info("=" * 60)
         run_sast(session, args.sast_dir, quiet=args.quiet)
+
+    if args.network_scan:
+        from scanner.network.port_scanner import scan_host, scan_network, parse_port_range, SERVICE_NAMES
+        if not args.quiet:
+            logger.info("=" * 60)
+            logger.info("NETWORK SCAN: %s", args.network_scan)
+            logger.info("=" * 60)
+
+        ports = parse_port_range(args.ports)
+
+        # Determine if CIDR or single host
+        if "/" in args.network_scan:
+            results = scan_network(args.network_scan, ports=ports, speed=args.scan_speed)
+        else:
+            result = scan_host(args.network_scan, ports=ports, speed=args.scan_speed)
+            results = [result] if result.is_alive else []
+
+        if not args.quiet:
+            for host_result in results:
+                logger.info("Host: %s%s — %d open ports (%.1fs)",
+                            host_result.ip,
+                            f" ({host_result.hostname})" if host_result.hostname else "",
+                            len(host_result.open_ports),
+                            host_result.scan_time)
+                for pr in host_result.open_ports:
+                    svc = pr.service or "unknown"
+                    logger.info("  %5d/tcp  %-6s  %s", pr.port, pr.state, svc)
+
+        # Add findings for high-risk open services
+        HIGH_RISK_PORTS = {21, 23, 445, 1433, 1521, 3306, 3389, 5432, 5900, 6379, 9200, 27017, 2375}
+        for host_result in results:
+            for pr in host_result.open_ports:
+                if pr.port in HIGH_RISK_PORTS:
+                    session.add_finding(Finding(
+                        title=f"High-Risk Service Exposed: {pr.service or 'unknown'} on port {pr.port}",
+                        severity=Severity.HIGH,
+                        description=f"Port {pr.port} ({pr.service or 'unknown'}) is open on {host_result.ip}. "
+                                    f"This service is commonly targeted by attackers.",
+                        evidence=f"Host: {host_result.ip}, Port: {pr.port}/tcp, State: {pr.state}, Service: {pr.service}",
+                        remediation=f"1. Verify this service needs to be exposed\n"
+                                    f"2. Restrict access via firewall rules\n"
+                                    f"3. Ensure the service is patched and hardened",
+                        url=f"tcp://{host_result.ip}:{pr.port}",
+                        module="network_scan",
+                        confirmed=True,
+                        detection_method="TCP connect scan with service identification",
+                    ))
+
+        if not results:
+            logger.info("Network scan: No alive hosts found.")
+
+    # Collect DAST proxy findings
+    if dast_proxy:
+        proxy_findings = dast_proxy.get_findings()
+        for pf in proxy_findings:
+            session.add_finding(Finding(
+                title=pf.title,
+                severity=pf.severity,
+                description=pf.description,
+                evidence=pf.evidence,
+                url=pf.url,
+                module="dast_proxy",
+                remediation=pf.remediation,
+                cwe=pf.cwe,
+                confirmed=True,
+                detection_method="DAST proxy passive traffic analysis",
+            ))
+        if not args.quiet:
+            logger.info("DAST Proxy: %d transactions captured, %d passive findings",
+                        dast_proxy.history.get_count(), len(proxy_findings))
+        dast_proxy.stop()
 
     session.end_time = time.time()
     duration = session.end_time - session.start_time

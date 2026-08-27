@@ -1,7 +1,7 @@
 import os
 import re
-from colorama import Fore, Style
 
+from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 def run_sast(session: ScanSession, target_dir: str, quiet: bool = False):
@@ -9,13 +9,25 @@ def run_sast(session: ScanSession, target_dir: str, quiet: bool = False):
     Core static analysis engine that walks the directory and runs SAST modules.
     """
     if not os.path.exists(target_dir):
-        print(f"{Fore.RED}[!] SAST Error: Directory '{target_dir}' does not exist.{Style.RESET_ALL}")
+        logger.error("SAST: Directory '%s' does not exist.", target_dir)
         return
 
-    from scanner.sast.modules import hardcoded_secrets
+    from scanner.sast.modules import (
+        hardcoded_secrets,
+        insecure_functions,
+        sql_injection,
+        insecure_crypto,
+        path_traversal,
+        sensitive_data,
+    )
 
     modules = [
         ("Hardcoded Secrets", hardcoded_secrets),
+        ("Insecure Functions", insecure_functions),
+        ("SQL Injection Patterns", sql_injection),
+        ("Insecure Cryptography", insecure_crypto),
+        ("Path Traversal Risks", path_traversal),
+        ("Sensitive Data Exposure", sensitive_data),
     ]
 
     files_to_scan = []
@@ -29,12 +41,12 @@ def run_sast(session: ScanSession, target_dir: str, quiet: bool = False):
                 files_to_scan.append(os.path.join(root, file))
 
     if not quiet:
-        print(f"[*] Found {len(files_to_scan)} files to analyze for SAST.")
+        logger.info("SAST: Found %d files to analyze.", len(files_to_scan))
 
     for name, module in modules:
         if not quiet:
-            print(f"\n  {Fore.CYAN}[>] Running SAST: {name}{Style.RESET_ALL}")
+            logger.info("SAST: Running %s", name)
         try:
             module.run(session, files_to_scan)
         except Exception as e:
-            print(f"\n  {Fore.RED}[!] SAST Module '{name}' error: {e}{Style.RESET_ALL}")
+            logger.error("SAST module '%s' error: %s", name, e)

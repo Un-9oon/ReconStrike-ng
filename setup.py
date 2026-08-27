@@ -20,7 +20,7 @@ setup(
     long_description_content_type="text/markdown",
     author="CypherSec",
     author_email="cyphersec.404@gmail.com",
-    url="https://github.com/Un-9oon/ReconStrike",
+    url="https://github.com/Un-9oon/ReconStrike-ng",
     packages=find_packages(),
     py_modules=["reconstrike"],
     python_requires=">=3.10",

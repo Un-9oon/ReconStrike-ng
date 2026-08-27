@@ -1,0 +1,11 @@
+.git
+__pycache__
+*.pyc
+.pytest_cache
+tests/
+debian/
+*.egg-info
+dist/
+build/
+.github/
+reconstrike-output/

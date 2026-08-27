@@ -7,8 +7,8 @@ Thank you for your interest in contributing to ReconStrike. This guide will help
 1. Fork and clone the repository:
 
 ```bash
-git clone https://github.com/<your-username>/ReconStrike.git
-cd ReconStrike
+git clone https://github.com/<your-username>/ReconStrike-ng.git
+cd ReconStrike-ng
 ```
 
 2. Create a virtual environment:

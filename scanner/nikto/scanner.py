@@ -182,7 +182,7 @@ def run(session: ScanSession) -> None:
     target = session.config.target
     signatures = get_all_signatures()
 
-    print(f"\n[*] Running Nikto-style misconfiguration scan ({get_signature_count()} signatures)...")
+    logger.info("Running Nikto-style misconfiguration scan (%d signatures)...", get_signature_count())
 
     # Phase 1: Calibrate false-positive detection
     fp = FPFingerprint()
@@ -203,7 +203,7 @@ def run(session: ScanSession) -> None:
         for future in as_completed(futures):
             scanned += 1
             if scanned % 20 == 0:
-                print(f"  [*] Progress: {scanned}/{total} signatures checked...")
+                logger.info("Nikto: %d/%d signatures checked...", scanned, total)
 
             result = future.result()
             if result:
@@ -211,7 +211,7 @@ def run(session: ScanSession) -> None:
 
     # Phase 3: Report findings
     if not hits:
-        print("  [+] No misconfigurations or sensitive files found.")
+        logger.info("Nikto: No misconfigurations or sensitive files found.")
         return
 
     # Sort by severity
@@ -252,5 +252,4 @@ def run(session: ScanSession) -> None:
     med = sum(1 for h in hits if h["severity"] == Severity.MEDIUM)
     low = sum(1 for h in hits if h["severity"] in (Severity.LOW, Severity.INFO))
 
-    print(f"  [+] Nikto scan complete: {len(hits)} findings "
-          f"(CRITICAL:{crit} HIGH:{high} MEDIUM:{med} LOW/INFO:{low})")
+    logger.info("Nikto: %d findings (CRITICAL:%d HIGH:%d MEDIUM:%d LOW/INFO:%d)", len(hits), crit, high, med, low)

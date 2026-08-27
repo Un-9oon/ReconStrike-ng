@@ -43,9 +43,9 @@ proxy = ["cryptography>=42.0.0", "mitmproxy>=10.0.0"]
 reconstrike = "reconstrike:main"
 
 [project.urls]
-Homepage = "https://github.com/Un-9oon/ReconStrike"
-Repository = "https://github.com/Un-9oon/ReconStrike"
-Issues = "https://github.com/Un-9oon/ReconStrike/issues"
+Homepage = "https://github.com/Un-9oon/ReconStrike-ng"
+Repository = "https://github.com/Un-9oon/ReconStrike-ng"
+Issues = "https://github.com/Un-9oon/ReconStrike-ng/issues"
 
 [tool.setuptools.dynamic]
 version = { attr = "scanner.__version__" }

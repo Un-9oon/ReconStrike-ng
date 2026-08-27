@@ -60,11 +60,68 @@ ReconStrike is a professional-grade vulnerability scanner built in Python that p
 
 ## Installation
 
+### Option 1: Docker (Recommended)
+
+Run ReconStrike in a fully isolated sandbox -- no access to your host system, browser, or services.
+
 ```bash
-git clone https://github.com/Un-9oon/ReconStrike.git
-cd ReconStrike
+git clone https://github.com/Un-9oon/ReconStrike-ng.git
+cd ReconStrike-ng
+sudo apt install docker.io   # if not already installed
+```
+
+```bash
+# Quick scan (sandboxed)
+./reconstrike-sandbox.sh -t https://target.com --profile quick
+
+# Deep scan with Tor (sandboxed)
+./reconstrike-sandbox.sh -t https://target.com --tor --rotate-ua --profile deep
+
+# Reports save to ./reconstrike-output/
+```
+
+The sandbox automatically:
+- Drops all Linux capabilities
+- Blocks access to host filesystem and services
+- Enforces read-only root filesystem
+- Prevents privilege escalation (even with root inside container)
+- Limits memory (512MB), CPU (2 cores), and processes (256)
+- Destroys the container after scan completes
+
+### Option 2: Virtual Machine (Maximum Isolation)
+
+For users who want MAC rotation or complete kernel-level isolation:
+
+```bash
+# Inside a VM (VirtualBox/KVM with Bridged Adapter):
+git clone https://github.com/Un-9oon/ReconStrike-ng.git
+cd ReconStrike-ng
+pip install -r requirements.txt
+
+# Full isolation + MAC + IP + UA rotation
+python3 reconstrike.py -t https://target.com --tor --rotate-mac --rotate-ua --anm --profile deep
+```
+
+VM advantages over Docker:
+- MAC rotation works (virtual NIC bridges to real network)
+- Separate kernel (harder to escape)
+- Snapshot and revert after scan (zero trace)
+
+### Option 3: Direct Install
+
+```bash
+git clone https://github.com/Un-9oon/ReconStrike-ng.git
+cd ReconStrike-ng
 pip install -r requirements.txt
 ```
+
+| | Docker | VM | Direct |
+|--|--------|-----|--------|
+| Host isolation | High | Highest | None |
+| MAC rotation | No | Yes | Yes (needs root) |
+| IP rotation (Tor/Proxy) | Yes | Yes | Yes |
+| Setup time | 2 min | 30 min | 1 min |
+| Recommended for | Most users | Paranoid mode | Dev/testing |
 
 ---
 
@@ -137,6 +194,54 @@ python3 reconstrike.py -t https://target.com --compliance
 
 # CI/CD pipeline (exit 1 on critical, 2 on high)
 python3 reconstrike.py -t https://target.com --ci --severity-threshold HIGH -q
+```
+
+### Network Scanning
+
+```bash
+# Scan a single host (top-1000 ports)
+python3 reconstrike.py --network-scan 192.168.1.1
+
+# Scan a CIDR range
+python3 reconstrike.py --network-scan 192.168.1.0/24
+
+# Custom ports and speed
+python3 reconstrike.py --network-scan 10.0.0.1 --ports 1-65535 --scan-speed 5
+
+# Combine with web scan
+python3 reconstrike.py -t https://target.com --network-scan 192.168.1.0/24
+```
+
+### Nikto-Style Misconfiguration Scan
+
+```bash
+# Run Nikto scanner (sensitive files, debug endpoints, misconfigs)
+python3 reconstrike.py -t https://target.com --nikto
+
+# Included automatically in full profile
+python3 reconstrike.py -t https://target.com --profile full
+```
+
+### Static Analysis (SAST)
+
+```bash
+# Scan local source code for vulnerabilities
+python3 reconstrike.py --sast-dir /path/to/source
+
+# Combine DAST + SAST
+python3 reconstrike.py -t https://target.com --sast-dir /path/to/source
+```
+
+SAST modules: hardcoded secrets, insecure functions, SQL injection patterns, insecure cryptography, path traversal risks, sensitive data exposure.
+
+### DAST Interception Proxy
+
+```bash
+# Start passive analysis proxy
+python3 reconstrike.py -t https://target.com --dast-proxy --proxy-port 8087
+
+# Configure your browser to use http://127.0.0.1:8087 as proxy
+# Import CA cert from ~/.reconstrike/ca/ca.crt into browser
 ```
 
 ### Custom Headers & Cookies
@@ -212,13 +317,13 @@ jobs:
 
       - name: Install ReconStrike
         run: |
-          git clone https://github.com/Un-9oon/ReconStrike.git
-          cd ReconStrike
+          git clone https://github.com/Un-9oon/ReconStrike-ng.git
+          cd ReconStrike-ng
           pip install -r requirements.txt
 
       - name: Run security scan
         run: |
-          cd ReconStrike
+          cd ReconStrike-ng
           python3 reconstrike.py \
             -t ${{ vars.SCAN_TARGET }} \
             --profile quick \
@@ -233,7 +338,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: security-scan-results
-          path: ReconStrike/results.json
+          path: ReconStrike-ng/results.json
 ```
 
 Exit codes: `0` = no findings above threshold, `1` = critical findings, `2` = high findings.
