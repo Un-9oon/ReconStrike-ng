@@ -20,13 +20,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
+          python --version
           pip install -r requirements.txt
           pip install pytest pytest-cov
+          pip list
       - name: Run tests
-        run: pytest --cov=scanner --cov-report=xml -v
-      - name: Upload coverage
-        if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v4
+        run: python -m pytest --cov=scanner --cov-report=xml -v --tb=long 2>&1 || { echo "::error::Tests failed"; python -m pytest --co -q 2>&1; exit 1; }
 
   lint:
     runs-on: ubuntu-latest
