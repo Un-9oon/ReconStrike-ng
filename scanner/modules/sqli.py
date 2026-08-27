@@ -194,7 +194,7 @@ def _check_time_based(session: ScanSession, url: str, param: str, original_value
                     f"Payload: {original_value}{payload}\n"
                     f"Expected Delay: {delay}s\n"
                     f"Baseline Response Time: {baseline_max:.2f}s\n"
-                    f"Injected Response Times: {', '.join(f'{t:.2f}s' for t in elapsed_times)}\n"
+                    f"Injected Response Times: {', '.join('{:.2f}s'.format(t) for t in elapsed_times)}\n"
                     f"Verification: 2/2 requests matched expected delay window\n"
                     f"Test URL: {test_url}"
                 ),

@@ -152,7 +152,7 @@ def _check_param(session: ScanSession, url: str, param: str, original: str):
                     f"Parameter: {param}\n"
                     f"Payload: {original}{payload}\n"
                     f"Baseline Max: {baseline_avg:.2f}s\n"
-                    f"Injected Times: {', '.join(f'{t:.2f}s' for t in elapsed_times)}\n"
+                    f"Injected Times: {', '.join('{:.2f}s'.format(t) for t in elapsed_times)}\n"
                     f"Verification: 2/2 requests exceeded threshold"
                 ),
                 remediation="Never pass user input to OS commands. Use language-native APIs.",

@@ -96,7 +96,7 @@ def build_curl(method: str, url: str, headers: dict = None, data: str = None) ->
                 v = "[REDACTED]"
             else:
                 v = _redact_sensitive(str(v))
-            cmd += f" -H {shell_quote(f'{k}: {v}')}"
+            cmd += " -H {}".format(shell_quote("{}: {}".format(k, v)))
     if data:
         safe_data = _redact_sensitive(data)
         cmd += f" -d {shell_quote(safe_data)}"
