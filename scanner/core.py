@@ -1,4 +1,5 @@
 import re
+import socket
 import time
 import threading
 import ipaddress
@@ -92,14 +93,10 @@ def build_curl(method: str, url: str, headers: dict = None, data: str = None) ->
     cmd = f"curl -k -X {method} {shell_quote(safe_url)}"
     if headers:
         for k, v in headers.items():
-            if k.lower() in ("authorization", "cookie", "x-api-key"):
-                v = "[REDACTED]"
-            else:
-                v = _redact_sensitive(str(v))
+            v = "[REDACTED]" if k.lower() in ("authorization", "cookie", "x-api-key") else _redact_sensitive(str(v))
             cmd += " -H {}".format(shell_quote("{}: {}".format(k, v)))
     if data:
-        safe_data = _redact_sensitive(data)
-        cmd += f" -d {shell_quote(safe_data)}"
+        cmd += f" -d {shell_quote(_redact_sensitive(data))}"
     return cmd
 
 
@@ -109,7 +106,7 @@ class ScanConfig:
     threads: int = 10
     timeout: int = 10
     depth: int = 3
-    user_agent: str = "ReconStrike/3.1 (Security Audit)"
+    user_agent: str = "ReconStrike-ng/3.1.1 (Security Audit)"
     auth_url: str = ""
     auth_username: str = ""
     auth_password: str = ""
@@ -125,7 +122,7 @@ class ScanConfig:
     anm_config: ANMConfig = field(default_factory=ANMConfig)
 
 
-MAX_RESPONSE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_RESPONSE_SIZE = 10 * 1024 * 1024
 
 PRIVATE_IP_RANGES = [
     ipaddress.ip_network("10.0.0.0/8"),
@@ -139,14 +136,29 @@ PRIVATE_IP_RANGES = [
 ]
 
 
-def _is_private_ip(hostname: str) -> bool:
+def _resolve_ip(hostname: str) -> str | None:
     try:
-        import socket
-        ip = socket.gethostbyname(hostname)
-        addr = ipaddress.ip_address(ip)
-        return any(addr in net for net in PRIVATE_IP_RANGES)
+        return socket.gethostbyname(hostname)
     except (socket.gaierror, ValueError):
+        return None
+
+
+def _is_private_ip(hostname: str) -> bool:
+    resolved = _resolve_ip(hostname)
+    if not resolved:
         return False
+    try:
+        return any(ipaddress.ip_address(resolved) in net for net in PRIVATE_IP_RANGES)
+    except ValueError:
+        return False
+
+
+def _check_ssrf(url: str, target_url: str) -> bool:
+    host = urlparse(url).netloc.split(":")[0]
+    target_host = urlparse(target_url).netloc.split(":")[0]
+    if not host:
+        return False
+    return _is_private_ip(host) and not _is_private_ip(target_host)
 
 
 def _domain_matches(url: str, reference_url: str) -> bool:
@@ -158,8 +170,7 @@ def _sanitize_path(path: str) -> str:
     cwd = os.path.abspath(os.getcwd())
     rel = os.path.relpath(abs_path, start=cwd)
     if rel.startswith("..") or os.path.isabs(rel):
-        basename = os.path.basename(path) or "output"
-        return os.path.join(cwd, basename)
+        return os.path.join(cwd, os.path.basename(path) or "output")
     return abs_path
 
 
@@ -170,10 +181,7 @@ class ScanSession:
         self.session.verify = config.verify_ssl
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        self.session.headers.update({
-            "User-Agent": config.user_agent,
-            **config.headers,
-        })
+        self.session.headers.update({"User-Agent": config.user_agent, **config.headers})
         if config.cookies:
             self.session.cookies.update(config.cookies)
         self.findings: list[Finding] = []
@@ -197,11 +205,9 @@ class ScanSession:
         self._warned_block = False
         self._warned_fail = False
 
-        # Adaptive Network Masking (ANM) — identity rotation engine
         self.identity_manager: Optional[IdentityManager] = None
         if config.anm_config.enabled:
             self.identity_manager = IdentityManager(config.anm_config)
-            # Apply initial identity (proxy + UA) to the session
             self.identity_manager.apply_to_session(self.session)
             logger.info("ANM: Adaptive Network Masking ACTIVE")
             if config.anm_config.use_tor:
@@ -226,13 +232,14 @@ class ScanSession:
                 return False
             from .crawler import extract_forms
             forms = extract_forms(resp.text, self.config.auth_url)
+
             login_form = None
             for form in forms:
                 input_names = [i["name"].lower() for i in form["inputs"] if i.get("name")]
-                has_password = any("pass" in n for n in input_names)
-                if has_password:
+                if any("pass" in n for n in input_names):
                     login_form = form
                     break
+
             if not login_form:
                 logger.warning("No login form found at %s", self.config.auth_url)
                 return False
@@ -242,9 +249,10 @@ class ScanSession:
                 name = inp.get("name", "")
                 if not name:
                     continue
-                if "user" in name.lower() or "email" in name.lower() or "login" in name.lower():
+                nl = name.lower()
+                if any(k in nl for k in ("user", "email", "login")):
                     post_data[name] = self.config.auth_username
-                elif "pass" in name.lower():
+                elif "pass" in nl:
                     post_data[name] = self.config.auth_password
                 elif inp.get("value"):
                     post_data[name] = inp["value"]
@@ -252,18 +260,16 @@ class ScanSession:
             action = login_form.get("action", self.config.auth_url)
             action_parsed = urlparse(action)
 
+            # refuse credential submission over HTTP downgrade
             if auth_parsed.scheme == "https" and action_parsed.scheme == "http":
-                logger.error(
-                    "Refusing to send credentials over unencrypted HTTP action (%s).",
-                    action,
-                )
+                logger.error("Refusing to send credentials over unencrypted HTTP action (%s).", action)
                 return False
 
+            # refuse cross-domain credential submission
             action_domain = action_parsed.netloc.lower()
             if action_domain and action_domain != auth_domain:
                 logger.error(
-                    "Login form action points to different domain (%s != %s). "
-                    "Refusing to send credentials.",
+                    "Login form action points to different domain (%s != %s). Refusing to send credentials.",
                     action_domain, auth_domain,
                 )
                 return False
@@ -275,7 +281,6 @@ class ScanSession:
             if resp.status_code == 200 and "logout" in resp.text.lower():
                 logger.info("Authentication successful")
                 return True
-
             if resp.status_code in (301, 302, 303):
                 logger.info("Authentication likely successful (redirect)")
                 return True
@@ -283,7 +288,7 @@ class ScanSession:
             logger.warning("Authentication result uncertain (status %s)", resp.status_code)
             return True
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError) as e:
             logger.error("Authentication failed: %s", type(e).__name__)
             return False
 
@@ -295,17 +300,16 @@ class ScanSession:
             finding.description = _redact_sensitive(finding.description)
             finding.evidence = _redact_sensitive(finding.evidence)
             self.findings.append(finding)
-        conf = "CONFIRMED" if finding.confirmed else "TENTATIVE"
 
-        # Format the URL cleanly, keeping it short
+        conf = "CONFIRMED" if finding.confirmed else "TENTATIVE"
         parsed = urlparse(finding.url)
         path_query = (parsed.path or "/") + ("?" + parsed.query if parsed.query else "")
         display_url = path_query if len(path_query) <= 80 else path_query[:77] + "..."
-        target_base = f"{parsed.scheme}://{parsed.netloc}"
 
         logger.info(
-            "[%s] %s | Target: %s | Path: %s [%s]",
-            finding.severity.value, finding.title, target_base, display_url, conf,
+            "[%s] %s | Target: %s://%s | Path: %s [%s]",
+            finding.severity.value, finding.title,
+            parsed.scheme, parsed.netloc, display_url, conf,
         )
 
     def _rate_limit(self):
@@ -321,7 +325,6 @@ class ScanSession:
                 else:
                     self._last_request_time = now
             self._request_count += 1
-
         if sleep_time > 0:
             time.sleep(sleep_time)
 
@@ -335,12 +338,11 @@ class ScanSession:
                         "High request failure rate / timeouts detected (5+ failed requests). "
                         "Target host may be dropping connections or firewalling your IP."
                     )
-                # ANM: Signal connection failure for identity rotation
                 if self.identity_manager:
                     rotated = self.identity_manager.signal_connection_fail()
                     if rotated:
                         self.identity_manager.apply_to_session(self.session)
-                        self._warned_fail = False  # reset warning after rotation
+                        self._warned_fail = False
                         self._consecutive_fails = 0
                         logger.info("ANM: Identity rotated after connection failures. Resuming scan.")
             else:
@@ -356,40 +358,29 @@ class ScanSession:
                             resp.status_code,
                         )
 
-                    # ANM: Signal block event for identity rotation
                     if self.identity_manager:
                         rotated = self.identity_manager.signal_block(resp.status_code)
                         if rotated:
                             self.identity_manager.apply_to_session(self.session)
-                            self._warned_block = False  # reset warning after rotation
+                            self._warned_block = False
                             self._consecutive_blocks = 0
-                            logger.info(
-                                "ANM: Identity rotated after HTTP %s blocks. Resuming scan.",
-                                resp.status_code,
-                            )
-                        else:
-                            # Fallback: adaptive throttling if ANM can't rotate
-                            if self._consecutive_blocks >= 3:
-                                logger.info("AUTO-EVASION: Adaptive throttling engaged. Delaying requests to bypass WAF...")
-                                self.config.rate_limit = max(self.config.rate_limit, 0.5)
-                    else:
-                        # No ANM — use legacy throttle-only evasion
-                        if self._consecutive_blocks >= 3:
+                            logger.info("ANM: Identity rotated after HTTP %s blocks. Resuming scan.", resp.status_code)
+                        elif self._consecutive_blocks >= 3:
                             logger.info("AUTO-EVASION: Adaptive throttling engaged. Delaying requests to bypass WAF...")
-                            self.config.rate_limit = 0.5
+                            self.config.rate_limit = max(self.config.rate_limit, 0.5)
+                    elif self._consecutive_blocks >= 3:
+                        logger.info("AUTO-EVASION: Adaptive throttling engaged. Delaying requests to bypass WAF...")
+                        self.config.rate_limit = 0.5
                 else:
                     self._consecutive_blocks = 0
-                    # ANM: Reset block/fail counters only on genuine success
                     if self.identity_manager:
                         self.identity_manager.reset_counters()
 
     def _in_scope(self, url: str) -> bool:
-        if self._scope_exclude_re:
-            if self._scope_exclude_re.search(url):
-                return False
-        if self._scope_include_re:
-            if not self._scope_include_re.search(url):
-                return False
+        if self._scope_exclude_re and self._scope_exclude_re.search(url):
+            return False
+        if self._scope_include_re and not self._scope_include_re.search(url):
+            return False
         return True
 
     def _safe_read(self, resp: requests.Response) -> Optional[requests.Response]:
@@ -397,13 +388,10 @@ class ScanSession:
             self._track_response_status(None)
             return None
 
-        if resp.history:
-            final_host = urlparse(resp.url).netloc.split(":")[0]
-            target_host = urlparse(self.config.target).netloc.split(":")[0]
-            if _is_private_ip(final_host) and not _is_private_ip(target_host):
-                resp.close()
-                self._track_response_status(None)
-                return None
+        if resp.history and _check_ssrf(resp.url, self.config.target):
+            resp.close()
+            self._track_response_status(None)
+            return None
 
         if resp.headers.get("Content-Length"):
             try:
@@ -416,16 +404,16 @@ class ScanSession:
 
         try:
             chunks = []
-            bytes_read = 0
+            total = 0
             for chunk in resp.iter_content(chunk_size=65536):
-                bytes_read += len(chunk)
-                if bytes_read > MAX_RESPONSE_SIZE:
+                total += len(chunk)
+                if total > MAX_RESPONSE_SIZE:
                     resp.close()
                     self._track_response_status(None)
                     return None
                 chunks.append(chunk)
             resp._content = b"".join(chunks)
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError) as e:
             self._track_response_status(None, exc=e)
             return None
 
@@ -434,23 +422,25 @@ class ScanSession:
 
     def get(self, url: str, **kwargs) -> Optional[requests.Response]:
         try:
+            if _check_ssrf(url, self.config.target):
+                return None
             self._rate_limit()
             kwargs.setdefault("timeout", self.config.timeout)
             kwargs.setdefault("allow_redirects", self.config.follow_redirects)
             kwargs.setdefault("stream", True)
-            resp = self.session.get(url, **kwargs)
-            return self._safe_read(resp)
+            return self._safe_read(self.session.get(url, **kwargs))
         except requests.RequestException as e:
             self._track_response_status(None, exc=e)
             return None
 
     def post(self, url: str, **kwargs) -> Optional[requests.Response]:
         try:
+            if _check_ssrf(url, self.config.target):
+                return None
             self._rate_limit()
             kwargs.setdefault("timeout", self.config.timeout)
             kwargs.setdefault("stream", True)
-            resp = self.session.post(url, **kwargs)
-            return self._safe_read(resp)
+            return self._safe_read(self.session.post(url, **kwargs))
         except requests.RequestException as e:
             self._track_response_status(None, exc=e)
             return None

@@ -1,29 +1,5 @@
-"""Nikto-style signature database for server misconfiguration and dangerous file detection.
-
-Contains 500+ signatures covering:
-- Default installation pages and admin panels
-- Sensitive files and backup leaks
-- Debug/profiling endpoints
-- Dangerous CGI scripts
-- Source code and configuration leaks
-- Version-specific vulnerabilities
-
-Each signature is a dict with:
-    path:        URL path to probe
-    method:      HTTP method (GET, HEAD, POST)
-    status:      Expected HTTP status code(s) for a hit
-    match:       Regex pattern to match in the response body (optional)
-    severity:    CRITICAL / HIGH / MEDIUM / LOW / INFO
-    category:    Category tag for filtering
-    description: Human-readable description of the finding
-    cwe:         CWE identifier
-"""
-
 from scanner.core import Severity
 
-# ---------------------------------------------------------------------------
-# Category constants
-# ---------------------------------------------------------------------------
 CAT_ADMIN = "admin_panel"
 CAT_BACKUP = "backup_file"
 CAT_CONFIG = "config_leak"
@@ -37,13 +13,8 @@ CAT_UPLOAD = "file_upload"
 CAT_DATABASE = "database_exposure"
 CAT_API = "api_exposure"
 
-# ---------------------------------------------------------------------------
-# Signature database
-# ---------------------------------------------------------------------------
 SIGNATURES = [
-    # ====================================================================
     # Source Control / Repository Leaks
-    # ====================================================================
     {"path": "/.git/config", "method": "GET", "status": [200],
      "match": r"\[core\]|\[remote", "severity": Severity.CRITICAL,
      "category": CAT_GIT, "cwe": "CWE-538",
@@ -55,7 +26,7 @@ SIGNATURES = [
     {"path": "/.git/logs/HEAD", "method": "GET", "status": [200],
      "match": r"[0-9a-f]{40}", "severity": Severity.HIGH,
      "category": CAT_GIT, "cwe": "CWE-538",
-     "description": "Git reflog exposed — contains commit history with author emails and timestamps."},
+     "description": "Git reflog exposed -- contains commit history with author emails and timestamps."},
     {"path": "/.svn/entries", "method": "GET", "status": [200],
      "match": r"dir|svn", "severity": Severity.CRITICAL,
      "category": CAT_GIT, "cwe": "CWE-538",
@@ -73,9 +44,7 @@ SIGNATURES = [
      "category": CAT_GIT, "cwe": "CWE-538",
      "description": "Bazaar VCS repository exposed."},
 
-    # ====================================================================
     # Environment & Configuration Files
-    # ====================================================================
     {"path": "/.env", "method": "GET", "status": [200],
      "match": r"(DB_|APP_|SECRET|KEY|PASSWORD|TOKEN|API)", "severity": Severity.CRITICAL,
      "category": CAT_CONFIG, "cwe": "CWE-312",
@@ -91,7 +60,7 @@ SIGNATURES = [
     {"path": "/.env.production", "method": "GET", "status": [200],
      "match": r"(DB_|APP_|SECRET|KEY)", "severity": Severity.CRITICAL,
      "category": CAT_CONFIG, "cwe": "CWE-312",
-     "description": "Production environment file exposed — likely contains live credentials."},
+     "description": "Production environment file exposed -- likely contains live credentials."},
     {"path": "/config.yml", "method": "GET", "status": [200],
      "match": r"(password|secret|key|database)", "severity": Severity.HIGH,
      "category": CAT_CONFIG, "cwe": "CWE-312",
@@ -107,7 +76,7 @@ SIGNATURES = [
     {"path": "/config.php", "method": "GET", "status": [200],
      "match": r"(\$db|\$password|\$secret|define\()", "severity": Severity.CRITICAL,
      "category": CAT_CONFIG, "cwe": "CWE-312",
-     "description": "PHP configuration file exposed — may contain database credentials."},
+     "description": "PHP configuration file exposed -- may contain database credentials."},
     {"path": "/wp-config.php.bak", "method": "GET", "status": [200],
      "match": r"(DB_NAME|DB_USER|DB_PASSWORD)", "severity": Severity.CRITICAL,
      "category": CAT_CONFIG, "cwe": "CWE-312",
@@ -119,7 +88,7 @@ SIGNATURES = [
     {"path": "/web.config", "method": "GET", "status": [200],
      "match": r"(connectionString|password|appSettings)", "severity": Severity.HIGH,
      "category": CAT_CONFIG, "cwe": "CWE-312",
-     "description": "IIS web.config exposed — may contain connection strings and credentials."},
+     "description": "IIS web.config exposed -- may contain connection strings and credentials."},
     {"path": "/appsettings.json", "method": "GET", "status": [200],
      "match": r"(ConnectionString|Password|Secret)", "severity": Severity.HIGH,
      "category": CAT_CONFIG, "cwe": "CWE-312",
@@ -135,19 +104,17 @@ SIGNATURES = [
     {"path": "/docker-compose.yml", "method": "GET", "status": [200],
      "match": r"(services:|image:|environment:)", "severity": Severity.HIGH,
      "category": CAT_CONFIG, "cwe": "CWE-312",
-     "description": "Docker Compose configuration exposed — reveals infrastructure and may contain secrets."},
+     "description": "Docker Compose configuration exposed -- reveals infrastructure and may contain secrets."},
     {"path": "/Dockerfile", "method": "GET", "status": [200],
      "match": r"(FROM |RUN |COPY |ENV )", "severity": Severity.MEDIUM,
      "category": CAT_CONFIG, "cwe": "CWE-200",
-     "description": "Dockerfile exposed — reveals build process and potential secrets."},
+     "description": "Dockerfile exposed -- reveals build process and potential secrets."},
 
-    # ====================================================================
     # Debug & Profiling Endpoints
-    # ====================================================================
     {"path": "/phpinfo.php", "method": "GET", "status": [200],
      "match": r"phpinfo\(\)|PHP Version", "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-200",
-     "description": "PHP info page exposed — reveals PHP version, extensions, and server configuration."},
+     "description": "PHP info page exposed -- reveals PHP version, extensions, and server configuration."},
     {"path": "/info.php", "method": "GET", "status": [200],
      "match": r"phpinfo\(\)|PHP Version", "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-200",
@@ -155,11 +122,11 @@ SIGNATURES = [
     {"path": "/server-status", "method": "GET", "status": [200],
      "match": r"Apache Server Status|Server Version", "severity": Severity.MEDIUM,
      "category": CAT_DEBUG, "cwe": "CWE-200",
-     "description": "Apache server-status page exposed — reveals active connections and server info."},
+     "description": "Apache server-status page exposed -- reveals active connections and server info."},
     {"path": "/server-info", "method": "GET", "status": [200],
      "match": r"Apache Server Information|Module Name", "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-200",
-     "description": "Apache server-info exposed — reveals loaded modules and full configuration."},
+     "description": "Apache server-info exposed -- reveals loaded modules and full configuration."},
     {"path": "/_debug", "method": "GET", "status": [200],
      "match": None, "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-489",
@@ -167,23 +134,23 @@ SIGNATURES = [
     {"path": "/debug/vars", "method": "GET", "status": [200],
      "match": r"(memstats|cmdline)", "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-489",
-     "description": "Go debug variables endpoint exposed — reveals memory stats and command line."},
+     "description": "Go debug variables endpoint exposed -- reveals memory stats and command line."},
     {"path": "/debug/pprof/", "method": "GET", "status": [200],
      "match": r"(goroutine|heap|profile)", "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-489",
-     "description": "Go pprof profiling endpoint exposed — can be used for DoS or information gathering."},
+     "description": "Go pprof profiling endpoint exposed -- can be used for DoS or information gathering."},
     {"path": "/actuator", "method": "GET", "status": [200],
      "match": r"(health|info|beans|env)", "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-200",
-     "description": "Spring Boot Actuator endpoint exposed — may leak environment variables and beans."},
+     "description": "Spring Boot Actuator endpoint exposed -- may leak environment variables and beans."},
     {"path": "/actuator/env", "method": "GET", "status": [200],
      "match": r"(propertySources|systemProperties)", "severity": Severity.CRITICAL,
      "category": CAT_DEBUG, "cwe": "CWE-200",
-     "description": "Spring Boot environment properties exposed — may contain secrets and credentials."},
+     "description": "Spring Boot environment properties exposed -- may contain secrets and credentials."},
     {"path": "/actuator/heapdump", "method": "GET", "status": [200],
      "match": None, "severity": Severity.CRITICAL,
      "category": CAT_DEBUG, "cwe": "CWE-200",
-     "description": "Spring Boot heap dump endpoint — can contain credentials and session tokens in memory."},
+     "description": "Spring Boot heap dump endpoint -- can contain credentials and session tokens in memory."},
     {"path": "/actuator/configprops", "method": "GET", "status": [200],
      "match": r"(beans|prefix)", "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-200",
@@ -191,11 +158,11 @@ SIGNATURES = [
     {"path": "/trace", "method": "GET", "status": [200],
      "match": r"(timestamp|headers|method)", "severity": Severity.MEDIUM,
      "category": CAT_DEBUG, "cwe": "CWE-200",
-     "description": "Request trace endpoint exposed — reveals recent HTTP requests and headers."},
+     "description": "Request trace endpoint exposed -- reveals recent HTTP requests and headers."},
     {"path": "/elmah.axd", "method": "GET", "status": [200],
      "match": r"Error Log|ELMAH", "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-209",
-     "description": "ELMAH error log exposed — contains stack traces and request details."},
+     "description": "ELMAH error log exposed -- contains stack traces and request details."},
     {"path": "/__debug__/", "method": "GET", "status": [200],
      "match": None, "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-489",
@@ -209,13 +176,11 @@ SIGNATURES = [
      "category": CAT_DEBUG, "cwe": "CWE-489",
      "description": "Symfony profiler exposed in production."},
 
-    # ====================================================================
     # Admin Panels & Management Interfaces
-    # ====================================================================
     {"path": "/admin/", "method": "GET", "status": [200, 301, 302, 401],
      "match": None, "severity": Severity.MEDIUM,
      "category": CAT_ADMIN, "cwe": "CWE-425",
-     "description": "Admin panel accessible — may be brute-forceable if no rate limiting."},
+     "description": "Admin panel accessible -- may be brute-forceable if no rate limiting."},
     {"path": "/administrator/", "method": "GET", "status": [200, 301, 302],
      "match": r"(joomla|login|admin)", "severity": Severity.MEDIUM,
      "category": CAT_ADMIN, "cwe": "CWE-425",
@@ -227,7 +192,7 @@ SIGNATURES = [
     {"path": "/phpmyadmin/", "method": "GET", "status": [200, 301, 302, 401],
      "match": r"(phpMyAdmin|pma)", "severity": Severity.CRITICAL,
      "category": CAT_ADMIN, "cwe": "CWE-284",
-     "description": "phpMyAdmin accessible — direct database management interface exposed."},
+     "description": "phpMyAdmin accessible -- direct database management interface exposed."},
     {"path": "/pma/", "method": "GET", "status": [200, 301, 302],
      "match": r"phpMyAdmin", "severity": Severity.CRITICAL,
      "category": CAT_ADMIN, "cwe": "CWE-284",
@@ -235,11 +200,11 @@ SIGNATURES = [
     {"path": "/adminer.php", "method": "GET", "status": [200],
      "match": r"Adminer|adminer", "severity": Severity.CRITICAL,
      "category": CAT_ADMIN, "cwe": "CWE-284",
-     "description": "Adminer database manager exposed — single-file database management tool."},
+     "description": "Adminer database manager exposed -- single-file database management tool."},
     {"path": "/manager/html", "method": "GET", "status": [200, 401, 403],
      "match": r"(Tomcat|manager)", "severity": Severity.HIGH,
      "category": CAT_ADMIN, "cwe": "CWE-284",
-     "description": "Tomcat Manager accessible — can be used to deploy malicious WAR files."},
+     "description": "Tomcat Manager accessible -- can be used to deploy malicious WAR files."},
     {"path": "/manager/status", "method": "GET", "status": [200, 401],
      "match": r"Tomcat|Server Status", "severity": Severity.MEDIUM,
      "category": CAT_ADMIN, "cwe": "CWE-200",
@@ -255,7 +220,7 @@ SIGNATURES = [
     {"path": "/_cat/indices", "method": "GET", "status": [200],
      "match": r"(health|index|docs)", "severity": Severity.CRITICAL,
      "category": CAT_DATABASE, "cwe": "CWE-284",
-     "description": "Elasticsearch indices listing exposed — full database catalog accessible."},
+     "description": "Elasticsearch indices listing exposed -- full database catalog accessible."},
     {"path": "/_cluster/health", "method": "GET", "status": [200],
      "match": r"cluster_name", "severity": Severity.HIGH,
      "category": CAT_DATABASE, "cwe": "CWE-284",
@@ -263,27 +228,25 @@ SIGNATURES = [
     {"path": "/graphql", "method": "POST", "status": [200, 400],
      "match": r"(data|errors|__schema)", "severity": Severity.MEDIUM,
      "category": CAT_API, "cwe": "CWE-200",
-     "description": "GraphQL endpoint accessible — may allow introspection and data exfiltration."},
+     "description": "GraphQL endpoint accessible -- may allow introspection and data exfiltration."},
     {"path": "/api/swagger.json", "method": "GET", "status": [200],
      "match": r"(swagger|openapi|paths)", "severity": Severity.MEDIUM,
      "category": CAT_API, "cwe": "CWE-200",
-     "description": "Swagger/OpenAPI specification exposed — reveals all API endpoints and schemas."},
+     "description": "Swagger/OpenAPI specification exposed -- reveals all API endpoints and schemas."},
     {"path": "/swagger-ui.html", "method": "GET", "status": [200],
      "match": r"swagger", "severity": Severity.MEDIUM,
      "category": CAT_API, "cwe": "CWE-200",
-     "description": "Swagger UI accessible — interactive API documentation exposed."},
+     "description": "Swagger UI accessible -- interactive API documentation exposed."},
     {"path": "/api-docs", "method": "GET", "status": [200],
      "match": r"(swagger|openapi|paths)", "severity": Severity.MEDIUM,
      "category": CAT_API, "cwe": "CWE-200",
      "description": "API documentation endpoint exposed."},
 
-    # ====================================================================
     # Backup & Sensitive Files
-    # ====================================================================
     {"path": "/backup.zip", "method": "HEAD", "status": [200],
      "match": None, "severity": Severity.CRITICAL,
      "category": CAT_BACKUP, "cwe": "CWE-538",
-     "description": "Backup archive accessible — may contain source code and credentials."},
+     "description": "Backup archive accessible -- may contain source code and credentials."},
     {"path": "/backup.tar.gz", "method": "HEAD", "status": [200],
      "match": None, "severity": Severity.CRITICAL,
      "category": CAT_BACKUP, "cwe": "CWE-538",
@@ -291,7 +254,7 @@ SIGNATURES = [
     {"path": "/backup.sql", "method": "HEAD", "status": [200],
      "match": None, "severity": Severity.CRITICAL,
      "category": CAT_BACKUP, "cwe": "CWE-538",
-     "description": "SQL database dump accessible — may contain all application data."},
+     "description": "SQL database dump accessible -- may contain all application data."},
     {"path": "/db.sql", "method": "HEAD", "status": [200],
      "match": None, "severity": Severity.CRITICAL,
      "category": CAT_BACKUP, "cwe": "CWE-538",
@@ -315,31 +278,31 @@ SIGNATURES = [
     {"path": "/.htpasswd", "method": "GET", "status": [200],
      "match": r":", "severity": Severity.CRITICAL,
      "category": CAT_SENSITIVE, "cwe": "CWE-538",
-     "description": "Apache password file exposed — contains hashed credentials."},
+     "description": "Apache password file exposed -- contains hashed credentials."},
     {"path": "/.htaccess", "method": "GET", "status": [200],
      "match": r"(Rewrite|Deny|Allow|Auth)", "severity": Severity.MEDIUM,
      "category": CAT_SENSITIVE, "cwe": "CWE-538",
-     "description": "Apache .htaccess file exposed — reveals URL rewrite rules and access controls."},
+     "description": "Apache .htaccess file exposed -- reveals URL rewrite rules and access controls."},
     {"path": "/crossdomain.xml", "method": "GET", "status": [200],
      "match": r"allow-access-from.*\*", "severity": Severity.MEDIUM,
      "category": CAT_SENSITIVE, "cwe": "CWE-942",
-     "description": "Flash crossdomain.xml with wildcard access — allows any domain to make Flash requests."},
+     "description": "Flash crossdomain.xml with wildcard access -- allows any domain to make Flash requests."},
     {"path": "/clientaccesspolicy.xml", "method": "GET", "status": [200],
      "match": r"allow-from.*\*", "severity": Severity.MEDIUM,
      "category": CAT_SENSITIVE, "cwe": "CWE-942",
-     "description": "Silverlight client access policy with wildcard — allows cross-domain requests."},
+     "description": "Silverlight client access policy with wildcard -- allows cross-domain requests."},
     {"path": "/robots.txt", "method": "GET", "status": [200],
      "match": r"(Disallow|admin|secret|backup|private)", "severity": Severity.INFO,
      "category": CAT_DISCLOSURE, "cwe": "CWE-200",
-     "description": "robots.txt reveals hidden paths — Disallow entries may point to sensitive areas."},
+     "description": "robots.txt reveals hidden paths -- Disallow entries may point to sensitive areas."},
     {"path": "/sitemap.xml", "method": "GET", "status": [200],
      "match": r"<urlset|<sitemapindex", "severity": Severity.INFO,
      "category": CAT_DISCLOSURE, "cwe": "CWE-200",
-     "description": "Sitemap found — reveals site structure and all indexed URLs."},
+     "description": "Sitemap found -- reveals site structure and all indexed URLs."},
     {"path": "/security.txt", "method": "GET", "status": [200],
      "match": r"Contact:", "severity": Severity.INFO,
      "category": CAT_DISCLOSURE, "cwe": "CWE-200",
-     "description": "security.txt file found — contains vulnerability disclosure contact info."},
+     "description": "security.txt file found -- contains vulnerability disclosure contact info."},
     {"path": "/.well-known/security.txt", "method": "GET", "status": [200],
      "match": r"Contact:", "severity": Severity.INFO,
      "category": CAT_DISCLOSURE, "cwe": "CWE-200",
@@ -347,27 +310,25 @@ SIGNATURES = [
     {"path": "/package.json", "method": "GET", "status": [200],
      "match": r"(dependencies|devDependencies|scripts)", "severity": Severity.MEDIUM,
      "category": CAT_CONFIG, "cwe": "CWE-200",
-     "description": "Node.js package.json exposed — reveals dependencies and potential vulnerable packages."},
+     "description": "Node.js package.json exposed -- reveals dependencies and potential vulnerable packages."},
     {"path": "/composer.json", "method": "GET", "status": [200],
      "match": r"(require|autoload)", "severity": Severity.MEDIUM,
      "category": CAT_CONFIG, "cwe": "CWE-200",
-     "description": "PHP Composer manifest exposed — reveals dependencies."},
+     "description": "PHP Composer manifest exposed -- reveals dependencies."},
     {"path": "/Gemfile", "method": "GET", "status": [200],
      "match": r"(gem |source )", "severity": Severity.MEDIUM,
      "category": CAT_CONFIG, "cwe": "CWE-200",
-     "description": "Ruby Gemfile exposed — reveals dependencies."},
+     "description": "Ruby Gemfile exposed -- reveals dependencies."},
     {"path": "/requirements.txt", "method": "GET", "status": [200],
      "match": r"(==|>=|flask|django|requests)", "severity": Severity.LOW,
      "category": CAT_CONFIG, "cwe": "CWE-200",
-     "description": "Python requirements.txt exposed — reveals dependencies and versions."},
+     "description": "Python requirements.txt exposed -- reveals dependencies and versions."},
 
-    # ====================================================================
     # Cloud & Infrastructure Metadata
-    # ====================================================================
     {"path": "/.aws/credentials", "method": "GET", "status": [200],
      "match": r"(aws_access_key|aws_secret)", "severity": Severity.CRITICAL,
      "category": CAT_CONFIG, "cwe": "CWE-312",
-     "description": "AWS credentials file exposed — contains IAM access keys."},
+     "description": "AWS credentials file exposed -- contains IAM access keys."},
     {"path": "/.docker/config.json", "method": "GET", "status": [200],
      "match": r"(auth|auths)", "severity": Severity.CRITICAL,
      "category": CAT_CONFIG, "cwe": "CWE-312",
@@ -375,7 +336,7 @@ SIGNATURES = [
     {"path": "/id_rsa", "method": "GET", "status": [200],
      "match": r"BEGIN.*PRIVATE KEY", "severity": Severity.CRITICAL,
      "category": CAT_SENSITIVE, "cwe": "CWE-312",
-     "description": "SSH private key exposed — grants server access."},
+     "description": "SSH private key exposed -- grants server access."},
     {"path": "/.ssh/id_rsa", "method": "GET", "status": [200],
      "match": r"BEGIN.*PRIVATE KEY", "severity": Severity.CRITICAL,
      "category": CAT_SENSITIVE, "cwe": "CWE-312",
@@ -383,15 +344,13 @@ SIGNATURES = [
     {"path": "/id_rsa.pub", "method": "GET", "status": [200],
      "match": r"ssh-rsa", "severity": Severity.LOW,
      "category": CAT_DISCLOSURE, "cwe": "CWE-200",
-     "description": "SSH public key exposed — reveals user identity."},
+     "description": "SSH public key exposed -- reveals user identity."},
 
-    # ====================================================================
     # CMS-Specific Paths
-    # ====================================================================
     {"path": "/wp-json/wp/v2/users", "method": "GET", "status": [200],
      "match": r"(\"slug\"|\"name\")", "severity": Severity.MEDIUM,
      "category": CAT_DISCLOSURE, "cwe": "CWE-200",
-     "description": "WordPress REST API user enumeration — reveals usernames for brute-force attacks."},
+     "description": "WordPress REST API user enumeration -- reveals usernames for brute-force attacks."},
     {"path": "/wp-includes/version.php", "method": "GET", "status": [200],
      "match": r"wp_version", "severity": Severity.MEDIUM,
      "category": CAT_DISCLOSURE, "cwe": "CWE-200",
@@ -399,34 +358,28 @@ SIGNATURES = [
     {"path": "/wp-content/debug.log", "method": "GET", "status": [200],
      "match": r"(PHP |Fatal|Warning|Notice)", "severity": Severity.HIGH,
      "category": CAT_DEBUG, "cwe": "CWE-532",
-     "description": "WordPress debug log exposed — contains PHP errors, stack traces, and file paths."},
+     "description": "WordPress debug log exposed -- contains PHP errors, stack traces, and file paths."},
     {"path": "/xmlrpc.php", "method": "POST", "status": [200, 405],
      "match": r"XML-RPC server", "severity": Severity.MEDIUM,
      "category": CAT_API, "cwe": "CWE-284",
-     "description": "WordPress XML-RPC enabled — can be used for brute-force and DDoS amplification."},
+     "description": "WordPress XML-RPC enabled -- can be used for brute-force and DDoS amplification."},
 ]
 
 
 def get_all_signatures() -> list[dict]:
-    """Return all signatures as a list of dicts."""
     return list(SIGNATURES)
 
 
 def get_signatures_by_category(category: str) -> list[dict]:
-    """Return signatures filtered by category."""
     return [s for s in SIGNATURES if s["category"] == category]
 
 
 def get_signatures_by_severity(severity: Severity) -> list[dict]:
-    """Return signatures filtered by minimum severity."""
-    severity_order = {
-        Severity.CRITICAL: 4, Severity.HIGH: 3, Severity.MEDIUM: 2,
-        Severity.LOW: 1, Severity.INFO: 0,
-    }
-    min_level = severity_order.get(severity, 0)
-    return [s for s in SIGNATURES if severity_order.get(s["severity"], 0) >= min_level]
+    order = {Severity.CRITICAL: 4, Severity.HIGH: 3, Severity.MEDIUM: 2,
+             Severity.LOW: 1, Severity.INFO: 0}
+    min_level = order.get(severity, 0)
+    return [s for s in SIGNATURES if order.get(s["severity"], 0) >= min_level]
 
 
 def get_signature_count() -> int:
-    """Return the total number of signatures."""
     return len(SIGNATURES)

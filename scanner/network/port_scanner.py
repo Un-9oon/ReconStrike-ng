@@ -1,28 +1,11 @@
-"""High-speed asynchronous TCP port scanner for internal network auditing.
-
-Supports scanning individual hosts, CIDR ranges, and port ranges from
-top-1000 to full 65535.  Uses asyncio for high concurrency without
-requiring raw sockets or root privileges.
-
-Usage from CLI::
-
-    reconstrike --network-scan 192.168.1.0/24 --ports top-1000
-    reconstrike --network-scan 10.0.0.1 --ports 1-65535 --scan-speed 5
-"""
-
 import asyncio
 import ipaddress
 import socket
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from scanner.log import logger
 
-
-# ---------------------------------------------------------------------------
-# Top-1000 TCP ports (Nmap default) — the most commonly open ports
-# ---------------------------------------------------------------------------
 TOP_1000_PORTS = [
     1, 3, 4, 6, 7, 9, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 30, 32, 33,
     37, 42, 43, 49, 53, 70, 79, 80, 81, 82, 83, 84, 85, 88, 89, 90, 99,
@@ -110,7 +93,6 @@ TOP_1000_PORTS = [
     63331, 64623, 64680, 65000, 65129, 65389,
 ]
 
-# Well-known service names for common ports
 SERVICE_NAMES = {
     20: "FTP-data", 21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP",
     53: "DNS", 67: "DHCP", 68: "DHCP", 69: "TFTP", 80: "HTTP",
@@ -148,12 +130,8 @@ SERVICE_NAMES = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Data structures
-# ---------------------------------------------------------------------------
 @dataclass
 class PortResult:
-    """Result of scanning a single port on a host."""
     host: str
     port: int
     state: str  # "open", "closed", "filtered"
@@ -168,7 +146,6 @@ class PortResult:
 
 @dataclass
 class HostResult:
-    """Aggregated scan results for a single host."""
     ip: str
     hostname: str = ""
     open_ports: list[PortResult] = field(default_factory=list)
@@ -180,9 +157,6 @@ class HostResult:
         return len(self.open_ports) > 0
 
 
-# ---------------------------------------------------------------------------
-# Scan speed profiles
-# ---------------------------------------------------------------------------
 SPEED_PROFILES = {
     1: {"concurrency": 50, "timeout": 3.0, "delay": 0.1, "label": "Stealth"},
     2: {"concurrency": 150, "timeout": 2.5, "delay": 0.05, "label": "Polite"},
@@ -192,24 +166,16 @@ SPEED_PROFILES = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Core async scanner
-# ---------------------------------------------------------------------------
 async def _scan_port_async(host: str, port: int, timeout: float,
                            semaphore: asyncio.Semaphore) -> PortResult:
-    """Scan a single port using async TCP connect."""
     async with semaphore:
         try:
             _, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port),
-                timeout=timeout,
-            )
+                asyncio.open_connection(host, port), timeout=timeout)
             writer.close()
             await writer.wait_closed()
-
-            service = SERVICE_NAMES.get(port, "")
-            return PortResult(host=host, port=port, state="open", service=service)
-
+            return PortResult(host=host, port=port, state="open",
+                              service=SERVICE_NAMES.get(port, ""))
         except asyncio.TimeoutError:
             return PortResult(host=host, port=port, state="filtered")
         except (ConnectionRefusedError, ConnectionResetError):
@@ -218,120 +184,61 @@ async def _scan_port_async(host: str, port: int, timeout: float,
             return PortResult(host=host, port=port, state="filtered")
 
 
-async def _scan_host_async(host: str, ports: list[int],
-                           speed: int = 3) -> HostResult:
-    """Scan all specified ports on a single host."""
+async def _scan_host_async(host: str, ports: list[int], speed: int = 3) -> HostResult:
     profile = SPEED_PROFILES.get(speed, SPEED_PROFILES[3])
     semaphore = asyncio.Semaphore(profile["concurrency"])
-    timeout = profile["timeout"]
-
     start = time.time()
 
-    tasks = [_scan_port_async(host, port, timeout, semaphore) for port in ports]
-    results = await asyncio.gather(*tasks)
-
+    results = await asyncio.gather(
+        *[_scan_port_async(host, p, profile["timeout"], semaphore) for p in ports])
     elapsed = time.time() - start
 
-    # Resolve hostname
     hostname = ""
     try:
         hostname = socket.getfqdn(host)
         if hostname == host:
             hostname = ""
-    except Exception:
+    except OSError:
         pass
 
-    open_ports = [r for r in results if r.is_open]
-    open_ports.sort(key=lambda r: r.port)
-
-    return HostResult(
-        ip=host,
-        hostname=hostname,
-        open_ports=open_ports,
-        scan_time=elapsed,
-    )
+    open_ports = sorted([r for r in results if r.is_open], key=lambda r: r.port)
+    return HostResult(ip=host, hostname=hostname, open_ports=open_ports, scan_time=elapsed)
 
 
-def scan_host(host: str, ports: list[int] | None = None,
-              speed: int = 3) -> HostResult:
-    """Synchronous wrapper: scan a single host.
-
-    Args:
-        host:  IP address or hostname to scan.
-        ports: List of ports to scan. Defaults to top-1000.
-        speed: Scan speed 1-5 (1=stealth, 5=insane).
-
-    Returns:
-        HostResult with all open ports found.
-    """
+def scan_host(host: str, ports: list[int] | None = None, speed: int = 3) -> HostResult:
     if ports is None:
         ports = TOP_1000_PORTS
-
     try:
         ip = socket.gethostbyname(host)
     except socket.gaierror:
         logger.error("Network: Cannot resolve host: %s", host)
         return HostResult(ip=host)
-
     return asyncio.run(_scan_host_async(ip, ports, speed))
 
 
-def scan_network(cidr: str, ports: list[int] | None = None,
-                 speed: int = 3) -> list[HostResult]:
-    """Scan an entire CIDR range.
-
-    Args:
-        cidr:  CIDR notation (e.g., "192.168.1.0/24").
-        ports: List of ports to scan per host. Defaults to top-1000.
-        speed: Scan speed 1-5.
-
-    Returns:
-        List of HostResult for all hosts with at least one open port.
-    """
+def scan_network(cidr: str, ports: list[int] | None = None, speed: int = 3) -> list[HostResult]:
     if ports is None:
         ports = TOP_1000_PORTS
-
     try:
         network = ipaddress.ip_network(cidr, strict=False)
     except ValueError as e:
-        logger.error("Network: Invalid CIDR: %s — %s", cidr, e)
+        logger.error("Network: Invalid CIDR: %s -- %s", cidr, e)
         return []
 
-    hosts = [str(ip) for ip in network.hosts()]
-    if not hosts:
-        # Single host (e.g., /32)
-        hosts = [str(network.network_address)]
-
+    hosts = [str(ip) for ip in network.hosts()] or [str(network.network_address)]
     logger.info("Network: Scanning %d hosts in %s (speed=%d, ports=%d)",
                 len(hosts), cidr, speed, len(ports))
 
-    results = []
-
     async def _scan_all():
-        tasks = [_scan_host_async(h, ports, speed) for h in hosts]
-        return await asyncio.gather(*tasks)
+        return await asyncio.gather(*[_scan_host_async(h, ports, speed) for h in hosts])
 
-    all_results = asyncio.run(_scan_all())
-
-    # Filter to only alive hosts
-    alive = [r for r in all_results if r.is_alive]
+    alive = [r for r in asyncio.run(_scan_all()) if r.is_alive]
     alive.sort(key=lambda r: ipaddress.ip_address(r.ip))
-
     return alive
 
 
 def parse_port_range(port_str: str) -> list[int]:
-    """Parse a port specification string into a list of port numbers.
-
-    Supports:
-        "top-1000"   -> Nmap top-1000 ports
-        "1-1024"     -> Range
-        "22,80,443"  -> Comma-separated
-        "1-65535"    -> Full scan
-        "80,443,8000-9000"  -> Mixed
-    """
     port_str = port_str.strip().lower()
-
     if port_str in ("top-1000", "top1000", "default"):
         return TOP_1000_PORTS
     if port_str in ("all", "full", "1-65535"):
@@ -343,9 +250,7 @@ def parse_port_range(port_str: str) -> list[int]:
         if "-" in part:
             try:
                 start, end = part.split("-", 1)
-                for p in range(int(start), int(end) + 1):
-                    if 1 <= p <= 65535:
-                        ports.add(p)
+                ports.update(p for p in range(int(start), int(end) + 1) if 1 <= p <= 65535)
             except ValueError:
                 pass
         else:
@@ -355,5 +260,4 @@ def parse_port_range(port_str: str) -> list[int]:
                     ports.add(p)
             except ValueError:
                 pass
-
     return sorted(ports)

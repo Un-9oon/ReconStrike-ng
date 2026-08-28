@@ -1,6 +1,7 @@
 import re
 
 from scanner.core import Finding, Severity, ScanSession
+from scanner.log import logger
 
 TECH_SIGNATURES = {
     "headers": {
@@ -72,17 +73,24 @@ WAF_SIGNATURES = [
     {"name": "Fastly", "headers": {"X-Served-By": "", "X-Cache": "", "Via": ".*varnish"}, "cookies": []},
 ]
 
+_DETECTION = (
+    "Analyzed HTTP response headers (Server, X-Powered-By, X-AspNet-Version) and response "
+    "body patterns to identify server software, frameworks, and versions. Cross-references "
+    "with known EOL databases for outdated software detection."
+)
+
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Fingerprinting technologies and detecting WAF...")
+    logger.info("\n[*] Fingerprinting technologies and detecting WAF...")
 
     resp = session.get(session.config.target)
     if not resp:
         return
 
     detected_tech = set()
-    curl_cmd = f"curl -kI '{session.config.target}'"
+    curl_cmd = "curl -kI '{}'".format(session.config.target)
 
+    # Header fingerprinting
     for header_name, patterns in TECH_SIGNATURES["headers"].items():
         header_val = resp.headers.get(header_name, "")
         if not header_val:
@@ -91,16 +99,14 @@ def run(session: ScanSession) -> None:
             match = re.search(pattern, header_val, re.IGNORECASE)
             if match:
                 groups = match.groups()
-                tech = label.format(groups[0]) if groups else label
-                detected_tech.add(tech)
+                detected_tech.add(label.format(groups[0]) if groups else label)
 
-    body = resp.text
+    # Body pattern matching
     for pattern, label in TECH_SIGNATURES["body"]:
-        match = re.search(pattern, body, re.IGNORECASE)
+        match = re.search(pattern, resp.text, re.IGNORECASE)
         if match:
             groups = match.groups()
-            tech = label.format(groups[0]) if groups else label
-            detected_tech.add(tech)
+            detected_tech.add(label.format(groups[0]) if groups else label)
 
     for cookie_name, tech in TECH_SIGNATURES["cookies"].items():
         for cookie in resp.cookies:
@@ -109,7 +115,7 @@ def run(session: ScanSession) -> None:
 
     if detected_tech:
         tech_list = sorted(detected_tech)
-        print(f"  [+] Detected technologies: {', '.join(tech_list)}")
+        logger.info(" [+] Detected technologies: {}".format(", ".join(tech_list)))
 
         version_exposed = [t for t in tech_list if re.search(r'\d+\.\d+', t)]
         if version_exposed:
@@ -117,10 +123,10 @@ def run(session: ScanSession) -> None:
                 title="Technology Stack Fingerprinted (Versions Exposed)",
                 severity=Severity.LOW,
                 description=(
-                    f"Server reveals technology versions: {', '.join(version_exposed)}. "
-                    f"Version information helps attackers identify known CVEs for specific software versions."
-                ),
-                evidence=f"Technologies detected: {', '.join(tech_list)}",
+                    "Server reveals technology versions: {}. "
+                    "Version information helps attackers identify known CVEs for specific software versions."
+                ).format(", ".join(version_exposed)),
+                evidence="Technologies detected: {}".format(", ".join(tech_list)),
                 remediation="Suppress version numbers in Server, X-Powered-By headers. Remove generator meta tags.",
                 url=session.config.target,
                 module="fingerprint",
@@ -129,10 +135,10 @@ def run(session: ScanSession) -> None:
                 location="HTTP response headers and HTML body",
                 curl_command=curl_cmd,
                 reproduction_steps=(
-                    f"1. Send: {curl_cmd}\n"
-                    f"2. Observe Server/X-Powered-By headers revealing versions.\n"
-                    f"3. Technologies found: {', '.join(tech_list)}"
-                ),
+                    "1. Send: {cmd}\n"
+                    "2. Observe Server/X-Powered-By headers revealing versions.\n"
+                    "3. Technologies found: {techs}"
+                ).format(cmd=curl_cmd, techs=", ".join(tech_list)),
                 developer_fix=(
                     "Apache: ServerTokens Prod; ServerSignature Off\n"
                     "Nginx: server_tokens off;\n"
@@ -142,14 +148,14 @@ def run(session: ScanSession) -> None:
                 ),
                 affected_component="Server headers / HTML meta tags",
                 references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/01-Information_Gathering/02-Fingerprint_Web_Server",
-                detection_method="Analyzed HTTP response headers (Server, X-Powered-By, X-AspNet-Version) and response body patterns to identify server software, frameworks, and versions. Cross-references with known EOL databases for outdated software detection.",
+                detection_method=_DETECTION,
             ))
         else:
             session.add_finding(Finding(
                 title="Technology Stack Identified",
                 severity=Severity.INFO,
-                description=f"Technologies detected: {', '.join(tech_list)}.",
-                evidence=f"Technologies: {', '.join(tech_list)}",
+                description="Technologies detected: {}.".format(", ".join(tech_list)),
+                evidence="Technologies: {}".format(", ".join(tech_list)),
                 remediation="Consider removing unnecessary technology indicators.",
                 url=session.config.target,
                 module="fingerprint",
@@ -157,9 +163,10 @@ def run(session: ScanSession) -> None:
                 confirmed=True,
                 location="HTTP response headers and HTML body",
                 curl_command=curl_cmd,
-                detection_method="Analyzed HTTP response headers (Server, X-Powered-By, X-AspNet-Version) and response body patterns to identify server software, frameworks, and versions. Cross-references with known EOL databases for outdated software detection.",
+                detection_method=_DETECTION,
             ))
 
+    # WAF detection
     detected_waf = []
     for waf in WAF_SIGNATURES:
         found = False
@@ -186,12 +193,12 @@ def run(session: ScanSession) -> None:
 
     if detected_waf:
         waf_list = ", ".join(detected_waf)
-        print(f"  [+] WAF/CDN detected: {waf_list}")
+        logger.info(" [+] WAF/CDN detected: {}".format(waf_list))
         session.add_finding(Finding(
-            title=f"WAF/CDN Detected: {waf_list}",
+            title="WAF/CDN Detected: {}".format(waf_list),
             severity=Severity.INFO,
-            description=f"Web Application Firewall or CDN detected: {waf_list}. Some scan results may be affected by WAF filtering.",
-            evidence=f"Detected via header/cookie analysis: {waf_list}",
+            description="Web Application Firewall or CDN detected: {}. Some scan results may be affected by WAF filtering.".format(waf_list),
+            evidence="Detected via header/cookie analysis: {}".format(waf_list),
             remediation="Informational. WAF provides defense-in-depth but should not be the only protection.",
             url=session.config.target,
             module="fingerprint",
@@ -199,15 +206,15 @@ def run(session: ScanSession) -> None:
             confirmed=True,
             location="HTTP response headers and cookies",
             curl_command=curl_cmd,
-            detection_method="Analyzed HTTP response headers (Server, X-Powered-By, X-AspNet-Version) and response body patterns to identify server software, frameworks, and versions. Cross-references with known EOL databases for outdated software detection.",
+            detection_method=_DETECTION,
         ))
     else:
-        print("  [*] No WAF/CDN detected.")
+        logger.info(" [*] No WAF/CDN detected.")
 
     _check_version_vulns(session, detected_tech)
 
 
-def _check_version_vulns(session: ScanSession, tech_set: set):
+def _check_version_vulns(session, tech_set):
     known_eol = {
         "PHP 5": "PHP 5.x is End-of-Life and no longer receives security patches.",
         "PHP 7.0": "PHP 7.0 is End-of-Life.",
@@ -223,18 +230,18 @@ def _check_version_vulns(session: ScanSession, tech_set: set):
         for pattern, message in known_eol.items():
             if tech.startswith(pattern):
                 session.add_finding(Finding(
-                    title=f"End-of-Life Software: {tech}",
+                    title="End-of-Life Software: {}".format(tech),
                     severity=Severity.HIGH,
-                    description=f"{message} Running EOL software means no security patches for newly discovered vulnerabilities.",
-                    evidence=f"Detected: {tech}",
-                    remediation=f"Upgrade to a currently supported version.",
+                    description="{} Running EOL software means no security patches for newly discovered vulnerabilities.".format(message),
+                    evidence="Detected: {}".format(tech),
+                    remediation="Upgrade to a currently supported version.",
                     url=session.config.target,
                     module="fingerprint",
                     cwe="CWE-1104",
                     confirmed=True,
                     location="Server technology version",
-                    developer_fix=f"Upgrade {tech.split()[0]} to the latest supported version.\nCheck https://endoflife.date/ for EOL schedules.",
-                    affected_component=f"{tech} installation",
+                    developer_fix="Upgrade {} to the latest supported version.\nCheck https://endoflife.date/ for EOL schedules.".format(tech.split()[0]),
+                    affected_component="{} installation".format(tech),
                     references="https://endoflife.date/",
-                    detection_method="Analyzed HTTP response headers (Server, X-Powered-By, X-AspNet-Version) and response body patterns to identify server software, frameworks, and versions. Cross-references with known EOL databases for outdated software detection.",
+                    detection_method=_DETECTION,
                 ))

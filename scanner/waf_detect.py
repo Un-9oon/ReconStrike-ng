@@ -1,6 +1,4 @@
-import re
 from scanner.core import Finding, Severity, ScanSession
-
 
 WAF_SIGNATURES = {
     "Cloudflare": {
@@ -71,19 +69,15 @@ def detect_waf(session: ScanSession) -> list[str]:
         return detected
 
     for waf_name, sigs in WAF_SIGNATURES.items():
-        if _check_headers(resp, sigs["headers"]):
-            detected.append(waf_name)
-            continue
-        if _check_cookies(resp, sigs["cookies"]):
-            detected.append(waf_name)
-            continue
-        if _check_body(resp, sigs["body"]):
+        if (_check_headers(resp, sigs["headers"]) or
+                _check_cookies(resp, sigs["cookies"]) or
+                _check_body(resp, sigs["body"])):
             detected.append(waf_name)
 
     if not detected:
         for payload in WAF_TRIGGER_PAYLOADS:
             trigger_resp = session.get(
-                f"{session.config.target}/?test={payload}",
+                "{}/?test={}".format(session.config.target, payload),
                 allow_redirects=False,
             )
             if not trigger_resp:
@@ -101,23 +95,18 @@ def detect_waf(session: ScanSession) -> list[str]:
 
 
 def _check_headers(resp, header_checks):
-    for header_name, header_value in header_checks:
-        actual = resp.headers.get(header_name, "")
-        if actual and (not header_value or header_value.lower() in actual.lower()):
+    for name, value in header_checks:
+        actual = resp.headers.get(name, "")
+        if actual and (not value or value.lower() in actual.lower()):
             return True
     return False
 
 
 def _check_cookies(resp, cookie_names):
-    cookie_str = "; ".join(f"{c.name}" for c in resp.cookies)
-    for name in cookie_names:
-        if name.lower() in cookie_str.lower():
-            return True
-    return False
+    cookie_str = "; ".join(c.name for c in resp.cookies).lower()
+    return any(name.lower() in cookie_str for name in cookie_names)
 
 
 def _check_body(resp, body_patterns):
-    for pattern in body_patterns:
-        if pattern.lower() in resp.text.lower():
-            return True
-    return False
+    text = resp.text.lower()
+    return any(p.lower() in text for p in body_patterns)

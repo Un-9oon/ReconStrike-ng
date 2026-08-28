@@ -1,5 +1,6 @@
 import re
 from scanner.core import ScanSession
+from scanner.log import logger
 
 TECH_PATTERNS = {
     "frameworks": {
@@ -20,11 +21,9 @@ TECH_PATTERNS = {
         "ASP.NET": [r'__VIEWSTATE', r'__EVENTVALIDATION', r'aspnet_sessionid'],
     },
     "servers": {
-        "Nginx": [r'Server:.*nginx'],
-        "Apache": [r'Server:.*Apache'],
+        "Nginx": [r'Server:.*nginx'], "Apache": [r'Server:.*Apache'],
         "IIS": [r'Server:.*IIS', r'X-Powered-By.*ASP\.NET'],
-        "LiteSpeed": [r'Server:.*LiteSpeed'],
-        "Caddy": [r'Server:.*Caddy'],
+        "LiteSpeed": [r'Server:.*LiteSpeed'], "Caddy": [r'Server:.*Caddy'],
     },
     "cms": {
         "WordPress": [r'wp-content/', r'wp-includes/', r'wp-json'],
@@ -48,32 +47,26 @@ TECH_PATTERNS = {
 
 
 def analyze_tech_stack(session: ScanSession) -> dict:
-    detected = {}
     resp = session.get(session.config.target)
     if not resp:
-        return detected
+        return {}
 
-    combined = resp.text
-    headers_str = "\n".join(f"{k}: {v}" for k, v in resp.headers.items())
-    combined += "\n" + headers_str
+    combined = resp.text + "\n" + "\n".join("{}: {}".format(k, v) for k, v in resp.headers.items())
+    detected = {}
 
     for category, techs in TECH_PATTERNS.items():
-        for tech_name, patterns in techs.items():
-            for pattern in patterns:
-                if re.search(pattern, combined, re.IGNORECASE):
-                    detected.setdefault(category, [])
-                    if tech_name not in detected[category]:
-                        detected[category].append(tech_name)
-                    break
+        for name, patterns in techs.items():
+            if any(re.search(p, combined, re.IGNORECASE) for p in patterns):
+                detected.setdefault(category, [])
+                if name not in detected[category]:
+                    detected[category].append(name)
 
     return detected
 
 
 def print_tech_stack(stack: dict):
-    from colorama import Fore, Style
     if not stack:
-        print(f"  {Fore.YELLOW}[*] No technologies detected.{Style.RESET_ALL}")
+        logger.info("No technologies detected.")
         return
-
     for category, techs in stack.items():
-        print(f"  {Fore.CYAN}{category.title()}: {Style.RESET_ALL}{', '.join(techs)}")
+        logger.info("  %s: %s", category.title(), ", ".join(techs))

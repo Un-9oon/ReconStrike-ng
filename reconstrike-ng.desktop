@@ -1,7 +1,7 @@
 [Desktop Entry]
-Name=ReconStrike
+Name=ReconStrike-ng
 Comment=Advanced Web Vulnerability Assessment Framework
-Exec=reconstrike
+Exec=reconstrike-ng
 Icon=utilities-terminal
 Terminal=true
 Type=Application

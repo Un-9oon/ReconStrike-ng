@@ -6,7 +6,6 @@ from fpdf import FPDF
 from scanner.core import ScanSession, Severity, Finding
 from scanner import __version__
 
-
 SEVERITY_COLORS = {
     "CRITICAL": (139, 0, 0),
     "HIGH": (255, 0, 0),
@@ -127,16 +126,13 @@ class ReconStrikePDF(FPDF):
         for val, w in values:
             self.cell(w, 6, val[:int(w / 1.8)], border=1, fill=fill, align="L")
         self.ln()
-
-
 def generate_pdf_report(session: ScanSession, output_path: str, compliance_data: dict = None) -> str:
+    output_path = os.path.realpath(output_path)
     findings = sorted(session.findings, key=lambda f: f.severity.score, reverse=True)
     duration = (session.end_time or 0) - (session.start_time or 0)
     now = datetime.now(timezone.utc)
 
-    severity_counts = {}
-    for s in Severity:
-        severity_counts[s.value] = sum(1 for f in findings if f.severity == s)
+    severity_counts = {s.value: sum(1 for f in findings if f.severity == s) for s in Severity}
 
     risk_score = _calculate_risk_score(findings)
     risk_label = _risk_label(risk_score)
@@ -145,7 +141,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     pdf.alias_nb_pages()
     pdf.add_page()
 
-    # ── Cover / Title ──
     pdf.set_font("Helvetica", "B", 28)
     pdf.set_text_color(15, 23, 42)
     pdf.ln(15)
@@ -160,7 +155,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     pdf.set_line_width(0.2)
     pdf.ln(10)
 
-    # Meta info
     pdf._key_value("Target", session.config.target)
     pdf._key_value("Date", now.strftime("%B %d, %Y at %H:%M UTC"))
     pdf._key_value("Duration", f"{duration:.0f} seconds")
@@ -170,7 +164,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     pdf._key_value("Total Findings", f"{len(findings)} ({sum(1 for f in findings if f.confirmed)} confirmed)")
     pdf.ln(4)
 
-    # ── Stat Boxes ──
     y = pdf.get_y()
     box_w = 36
     gap = 2
@@ -185,8 +178,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     for i, (label, value, color) in enumerate(stats):
         pdf._stat_box(start_x + i * (box_w + gap), y, box_w, 22, label, value, color)
     pdf.set_y(y + 28)
-
-    # ── Risk Score ──
     pdf.ln(2)
     risk_color = _risk_color(risk_score)
     pdf.set_font("Helvetica", "B", 14)
@@ -204,8 +195,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     pdf.set_fill_color(*risk_color)
     pdf.rect(bar_x, bar_y, fill_w, 5, style="F")
     pdf.ln(12)
-
-    # ── Executive Summary ──
     pdf._section_title("1. Executive Summary")
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(51, 65, 85)
@@ -241,8 +230,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
 
     pdf.multi_cell(0, 5, summary_text)
     pdf.ln(4)
-
-    # ── Findings Summary Table ──
     pdf._section_title("2. Findings Overview")
 
     columns = [("Severity", 22), ("Title", 80), ("Module", 22), ("CWE", 20), ("Status", 20), ("URL", 26)]
@@ -276,8 +263,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
         pdf.ln()
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(0, 0, 0)
-
-    # ── Detailed Findings ──
     pdf._section_title("3. Detailed Findings")
 
     for idx, f in enumerate(findings, 1):
@@ -429,8 +414,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
             pdf.cell(0, 4, "Refs: " + f.references[:120], new_x="LMARGIN", new_y="NEXT")
 
         pdf.ln(4)
-
-    # ── Compliance Section ──
     if compliance_data:
         pdf.add_page()
         pdf._section_title("4. Compliance Mapping")
@@ -503,8 +486,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
         pdf.set_text_color(*score_color)
         pdf.set_font("Helvetica", "B", 10)
         pdf.cell(0, 7, f"PCI DSS Score: {pci_pass}/{pci_total} requirements passing", new_x="LMARGIN", new_y="NEXT")
-
-    # ── Findings Summary ──
     summary_num = "4" if not compliance_data else "5"
     pdf.add_page()
     pdf._section_title(f"{summary_num}. Findings Summary")
@@ -563,8 +544,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
             pdf.cell(0, 6, f"  {sev_name}: {count}", new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 6, f"  Confirmed: {confirmed} | Tentative: {total - confirmed}", new_x="LMARGIN", new_y="NEXT")
-
-    # ── Methodology ──
     section_num = str(int(summary_num) + 1)
     pdf.add_page()
     pdf._section_title(f"{section_num}. Methodology")
@@ -595,8 +574,6 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     pdf.set_text_color(51, 65, 85)
     for mod in session.config.scan_modules:
         pdf.cell(0, 5, f"  - {mod}", new_x="LMARGIN", new_y="NEXT")
-
-    # ── Disclaimer ──
     next_num = int(section_num) + 1
     pdf.ln(8)
     pdf._section_title(f"{next_num}. Disclaimer")
@@ -614,11 +591,10 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
         "information security policies."
     ))
 
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True, mode=0o700)
     pdf.output(output_path)
+    os.chmod(output_path, 0o600)
     return output_path
-
-
 def _calculate_risk_score(findings: list) -> int:
     if not findings:
         return 0
@@ -634,8 +610,6 @@ def _calculate_risk_score(findings: list) -> int:
         if score > max_score:
             max_score = score
     return max_score
-
-
 def _risk_label(score: int) -> str:
     if score >= 75:
         return "CRITICAL"
@@ -646,8 +620,6 @@ def _risk_label(score: int) -> str:
     if score > 0:
         return "LOW"
     return "NONE"
-
-
 def _risk_color(score: int) -> tuple:
     if score >= 75:
         return (139, 0, 0)

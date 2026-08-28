@@ -3,9 +3,9 @@ import os
 from datetime import datetime, timezone
 
 from scanner.core import ScanSession
+from scanner.log import logger
 
-
-SCAN_HISTORY_DIR = os.path.expanduser("~/.reconstrike/history")
+SCAN_HISTORY_DIR = os.path.expanduser("~/.reconstrike-ng/history")
 
 
 def _safe_domain(target: str) -> str:
@@ -19,8 +19,12 @@ def save_scan_results(session: ScanSession):
     os.makedirs(SCAN_HISTORY_DIR, mode=0o700, exist_ok=True)
     domain = _safe_domain(session.config.target)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"{domain}_{timestamp}.json"
-    filepath = os.path.join(SCAN_HISTORY_DIR, filename)
+    filepath = os.path.join(SCAN_HISTORY_DIR, "{}_{}.json".format(domain, timestamp))
+
+    finding_fields = ["title", "severity", "description", "evidence", "remediation",
+                      "url", "module", "cwe", "confirmed", "location", "parameter",
+                      "payload", "curl_command", "reproduction_steps", "developer_fix",
+                      "affected_component", "request_method", "response_status"]
 
     data = {
         "target": session.config.target,
@@ -29,45 +33,22 @@ def save_scan_results(session: ScanSession):
         "urls_scanned": len(session.crawled_urls),
         "forms_found": len(session.forms),
         "findings": [
-            {
-                "title": f.title,
-                "severity": f.severity.value,
-                "description": f.description,
-                "evidence": f.evidence,
-                "remediation": f.remediation,
-                "url": f.url,
-                "module": f.module,
-                "cwe": f.cwe,
-                "confirmed": f.confirmed,
-                "location": f.location,
-                "parameter": f.parameter,
-                "payload": f.payload,
-                "curl_command": f.curl_command,
-                "reproduction_steps": f.reproduction_steps,
-                "developer_fix": f.developer_fix,
-                "affected_component": f.affected_component,
-                "request_method": f.request_method,
-                "response_status": f.response_status,
-            }
+            {k: (getattr(f, k).value if k == "severity" else getattr(f, k))
+             for k in finding_fields}
             for f in session.findings
         ],
     }
 
-    fd = os.open(filepath, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as fh:
-        json.dump(data, fh, indent=2)
-
-    latest = os.path.join(SCAN_HISTORY_DIR, f"{domain}_latest.json")
-    fd2 = os.open(latest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd2, "w") as fh:
-        json.dump(data, fh, indent=2)
+    for dest in [filepath, os.path.join(SCAN_HISTORY_DIR, "{}_latest.json".format(domain))]:
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            json.dump(data, fh, indent=2)
 
     return filepath
 
 
 def load_previous_scan(target: str) -> dict | None:
-    domain = _safe_domain(target)
-    latest = os.path.join(SCAN_HISTORY_DIR, f"{domain}_latest.json")
+    latest = os.path.join(SCAN_HISTORY_DIR, "{}_latest.json".format(_safe_domain(target)))
     if not os.path.exists(latest):
         return None
     with open(latest) as fh:
@@ -75,26 +56,15 @@ def load_previous_scan(target: str) -> dict | None:
 
 
 def compute_diff(previous: dict, current_session: ScanSession) -> dict:
-    prev_findings = {
-        (f["title"], f["url"], f["module"]): f
-        for f in previous.get("findings", [])
-    }
-    curr_findings = {
-        (f.title, f.url, f.module): f
-        for f in current_session.findings
-    }
+    prev_findings = {(f["title"], f["url"], f["module"]): f for f in previous.get("findings", [])}
+    curr_findings = {(f.title, f.url, f.module): f for f in current_session.findings}
 
-    prev_keys = set(prev_findings.keys())
-    curr_keys = set(curr_findings.keys())
-
-    new_vulns = curr_keys - prev_keys
-    fixed_vulns = prev_keys - curr_keys
-    persistent = curr_keys & prev_keys
+    prev_keys, curr_keys = set(prev_findings), set(curr_findings)
 
     return {
-        "new": [curr_findings[k] for k in new_vulns],
-        "fixed": [prev_findings[k] for k in fixed_vulns],
-        "persistent": [curr_findings[k] for k in persistent],
+        "new": [curr_findings[k] for k in curr_keys - prev_keys],
+        "fixed": [prev_findings[k] for k in prev_keys - curr_keys],
+        "persistent": [curr_findings[k] for k in curr_keys & prev_keys],
         "previous_timestamp": previous.get("timestamp", "Unknown"),
         "previous_total": len(previous.get("findings", [])),
         "current_total": len(current_session.findings),
@@ -102,27 +72,28 @@ def compute_diff(previous: dict, current_session: ScanSession) -> dict:
 
 
 def print_diff(diff: dict):
-    from colorama import Fore, Style
+    def _get_attr(f, attr):
+        return getattr(f, attr) if hasattr(f, attr) else f.get(attr, "?")
 
-    print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}  SCAN COMPARISON (vs {diff['previous_timestamp'][:19]}){Style.RESET_ALL}")
-    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-    print(f"  Previous: {diff['previous_total']} findings")
-    print(f"  Current:  {diff['current_total']} findings")
+    logger.info("=" * 60)
+    logger.info("SCAN COMPARISON (vs %s)", diff['previous_timestamp'][:19])
+    logger.info("=" * 60)
+    logger.info("  Previous: %d findings", diff['previous_total'])
+    logger.info("  Current:  %d findings", diff['current_total'])
 
     if diff["new"]:
-        print(f"\n  {Fore.RED}NEW VULNERABILITIES ({len(diff['new'])}){Style.RESET_ALL}")
+        logger.info("NEW VULNERABILITIES (%d)", len(diff['new']))
         for f in diff["new"]:
-            sev = f.severity.value if hasattr(f, "severity") else f.get("severity", "?")
-            title = f.title if hasattr(f, "title") else f.get("title", "?")
-            print(f"    {Fore.RED}[+]{Style.RESET_ALL} [{sev}] {title}")
+            sev = _get_attr(f, "severity")
+            sev = sev.value if hasattr(sev, "value") else sev
+            logger.info("  [+] [%s] %s", sev, _get_attr(f, "title"))
 
     if diff["fixed"]:
-        print(f"\n  {Fore.GREEN}FIXED VULNERABILITIES ({len(diff['fixed'])}){Style.RESET_ALL}")
+        logger.info("FIXED VULNERABILITIES (%d)", len(diff['fixed']))
         for f in diff["fixed"]:
-            sev = f.get("severity", "?") if isinstance(f, dict) else f.severity.value
-            title = f.get("title", "?") if isinstance(f, dict) else f.title
-            print(f"    {Fore.GREEN}[-]{Style.RESET_ALL} [{sev}] {title}")
+            sev = _get_attr(f, "severity")
+            sev = sev.value if hasattr(sev, "value") else sev
+            logger.info("  [-] [%s] %s", sev, _get_attr(f, "title"))
 
     if diff["persistent"]:
-        print(f"\n  {Fore.YELLOW}PERSISTENT ({len(diff['persistent'])}){Style.RESET_ALL}")
+        logger.info("PERSISTENT (%d)", len(diff['persistent']))

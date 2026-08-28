@@ -93,19 +93,22 @@ class TestGenerateHtmlReport:
 
 
 class TestPrintSummary:
-    def test_no_crash_empty_findings(self, empty_session, capsys):
-        print_summary(empty_session)
-        captured = capsys.readouterr()
-        assert "No vulnerabilities found" in captured.out
+    def test_no_crash_empty_findings(self, empty_session, caplog):
+        import logging
+        with caplog.at_level(logging.INFO, logger="reconstrike-ng"):
+            print_summary(empty_session)
+        assert "No vulnerabilities found" in caplog.text
 
-    def test_no_crash_with_findings(self, session_with_findings, capsys):
-        print_summary(session_with_findings)
-        captured = capsys.readouterr()
-        assert "SCAN SUMMARY" in captured.out
-        assert "Total:" in captured.out
+    def test_no_crash_with_findings(self, session_with_findings, caplog):
+        import logging
+        with caplog.at_level(logging.INFO, logger="reconstrike-ng"):
+            print_summary(session_with_findings)
+        assert "SCAN SUMMARY" in caplog.text
+        assert "Total:" in caplog.text
 
-    def test_shows_severity_counts(self, session_with_findings, capsys):
-        print_summary(session_with_findings)
-        captured = capsys.readouterr()
-        assert "HIGH" in captured.out
-        assert "MEDIUM" in captured.out
+    def test_shows_severity_counts(self, session_with_findings, caplog):
+        import logging
+        with caplog.at_level(logging.INFO, logger="reconstrike-ng"):
+            print_summary(session_with_findings)
+        assert "HIGH" in caplog.text
+        assert "MEDIUM" in caplog.text

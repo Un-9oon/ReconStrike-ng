@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from scanner.core import Finding, Severity, ScanSession
+from scanner.log import logger
 
 COMMON_SUBDOMAINS = [
     "www", "mail", "ftp", "localhost", "webmail", "smtp", "pop", "ns1", "ns2",
@@ -53,25 +54,19 @@ def _resolve_subdomain(subdomain: str, domain: str) -> tuple[str, str | None]:
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Enumerating subdomains...")
+    logger.info("\n[*] Enumerating subdomains...")
 
     parsed = urlparse(session.config.target)
     domain = parsed.netloc.split(":")[0]
 
     parts = domain.split(".")
-    if len(parts) > 2:
-        base_domain = ".".join(parts[-2:])
-    else:
-        base_domain = domain
+    base_domain = ".".join(parts[-2:]) if len(parts) > 2 else domain
 
     found_subdomains = []
 
-    wildcard_ip = None
-    random_sub = "vulnscan-wildcard-check-xz9q7"
-    _, wild_ip = _resolve_subdomain(random_sub, base_domain)
-    if wild_ip:
-        wildcard_ip = wild_ip
-        print(f"  [!] Wildcard DNS detected (*.{base_domain} -> {wild_ip}), filtering results...")
+    _, wildcard_ip = _resolve_subdomain("vulnscan-wildcard-check-xz9q7", base_domain)
+    if wildcard_ip:
+        logger.warning(f" [!] Wildcard DNS detected (*.{base_domain} -> {wildcard_ip}), filtering results...")
 
     with ThreadPoolExecutor(max_workers=30) as executor:
         futures = {
@@ -89,12 +84,12 @@ def run(session: ScanSession) -> None:
     found_subdomains.sort(key=lambda x: x[0])
 
     if not found_subdomains:
-        print("  [*] No subdomains found via DNS brute force.")
+        logger.info(" [*] No subdomains found via DNS brute force.")
         return
 
-    print(f"  [+] Found {len(found_subdomains)} subdomains:")
+    logger.info(f" [+] Found {len(found_subdomains)} subdomains:")
     for fqdn, ip, _ in found_subdomains:
-        print(f"      {fqdn} -> {ip}")
+        logger.info(f" {fqdn} -> {ip}")
 
     interesting = [(fqdn, ip, sub) for fqdn, ip, sub in found_subdomains if sub in INTERESTING_SUBDOMAINS]
 

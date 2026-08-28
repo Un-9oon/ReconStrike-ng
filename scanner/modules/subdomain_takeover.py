@@ -196,7 +196,6 @@ SERVICE_FINGERPRINTS = {
 
 
 def _resolve_cname(hostname: str) -> str:
-    """Resolve CNAME record for a hostname using DNS."""
     try:
         import subprocess
         result = subprocess.run(
@@ -206,21 +205,20 @@ def _resolve_cname(hostname: str) -> str:
         cname = result.stdout.strip().rstrip(".")
         if cname:
             return cname
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         logger.debug("subdomain_takeover _resolve_cname: operation failed: %s", e)
 
     try:
         result = socket.getaddrinfo(hostname, None)
         if result:
             return result[0][4][0]
-    except Exception as e:
+    except (socket.gaierror, OSError) as e:
         logger.debug("subdomain_takeover _resolve_cname: socket operation failed: %s", e)
 
     return ""
 
 
 def _host_resolves(hostname: str) -> bool:
-    """Check if a hostname resolves to an IP."""
     try:
         socket.gethostbyname(hostname)
         return True
@@ -229,43 +227,28 @@ def _host_resolves(hostname: str) -> bool:
 
 
 def _extract_subdomains_from_urls(session: ScanSession) -> set:
-    """Extract unique subdomains from crawled URLs."""
-    base_parsed = urlparse(session.config.target)
-    base_domain = base_parsed.hostname or ""
-
+    base_domain = urlparse(session.config.target).hostname or ""
     parts = base_domain.split(".")
-    if len(parts) >= 2:
-        root_domain = ".".join(parts[-2:])
-    else:
-        root_domain = base_domain
+    root_domain = ".".join(parts[-2:]) if len(parts) >= 2 else base_domain
 
     subdomains = set()
     for url in session.crawled_urls:
-        parsed = urlparse(url)
-        hostname = parsed.hostname or ""
-        if hostname.endswith(root_domain) and hostname != root_domain:
-            subdomains.add(hostname)
-
+        h = urlparse(url).hostname or ""
+        if h.endswith(root_domain) and h != root_domain:
+            subdomains.add(h)
     return subdomains
 
 
 def _brute_force_subdomains(session: ScanSession) -> set:
-    """Brute-force common subdomains against the target domain."""
-    base_parsed = urlparse(session.config.target)
-    base_domain = base_parsed.hostname or ""
-
+    base_domain = urlparse(session.config.target).hostname or ""
     parts = base_domain.split(".")
-    if len(parts) >= 2:
-        root_domain = ".".join(parts[-2:])
-    else:
-        root_domain = base_domain
+    root_domain = ".".join(parts[-2:]) if len(parts) >= 2 else base_domain
 
     discovered = set()
     for sub in COMMON_SUBDOMAINS:
         fqdn = f"{sub}.{root_domain}"
         if _host_resolves(fqdn):
             discovered.add(fqdn)
-
     return discovered
 
 
@@ -289,7 +272,7 @@ def _check_takeover(session: ScanSession, subdomain: str) -> None:
             url = f"{scheme}://{subdomain}"
             try:
                 resp = session.get(url, allow_redirects=True)
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.debug("subdomain_takeover _check_takeover: request failed: %s", e)
                 continue
 
@@ -457,7 +440,7 @@ def _check_nxdomain_subdomains(session: ScanSession) -> None:
 
 def run(session: ScanSession) -> None:
     """Run subdomain takeover checks."""
-    print("\n[*] Testing for subdomain takeover vulnerabilities...")
+    logger.info("\n[*] Testing for subdomain takeover vulnerabilities...")
 
     subdomains = _extract_subdomains_from_urls(session)
 
@@ -465,7 +448,7 @@ def run(session: ScanSession) -> None:
     subdomains.update(brute_forced)
 
     if subdomains:
-        print(f"  [+] Found {len(subdomains)} subdomains to check")
+        logger.info(f" [+] Found {len(subdomains)} subdomains to check")
 
     for subdomain in subdomains:
         _check_takeover(session, subdomain)

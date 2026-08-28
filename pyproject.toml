@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "reconstrike"
+name = "reconstrike-ng"
 dynamic = ["version"]
 description = "Advanced Web & Network Vulnerability Assessment Framework"
 readme = "README.md"
@@ -40,7 +40,7 @@ dev = ["pytest", "pytest-cov", "flake8", "mypy", "black"]
 proxy = ["cryptography>=42.0.0", "mitmproxy>=10.0.0"]
 
 [project.scripts]
-reconstrike = "reconstrike:main"
+reconstrike-ng = "reconstrike_ng:main"
 
 [project.urls]
 Homepage = "https://github.com/Un-9oon/ReconStrike-ng"
@@ -51,7 +51,7 @@ Issues = "https://github.com/Un-9oon/ReconStrike-ng/issues"
 version = { attr = "scanner.__version__" }
 
 [tool.setuptools]
-py-modules = ["reconstrike"]
+py-modules = ["reconstrike_ng"]
 
 [tool.setuptools.packages.find]
 include = ["scanner*"]

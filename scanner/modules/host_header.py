@@ -1,6 +1,8 @@
 import re
 from urllib.parse import urlparse
 
+import requests
+
 from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession, build_curl
 
@@ -28,7 +30,6 @@ REDIRECT_HEADERS = ["Location", "Refresh", "Content-Location"]
 
 
 def _is_password_reset_form(form):
-    """Check if a form is likely a password reset / forgot password form."""
     action = form.get("action", "").lower()
     inputs = form.get("inputs", [])
 
@@ -36,7 +37,6 @@ def _is_password_reset_form(form):
         if pattern.search(action):
             return True
 
-    # Check form field names for email/password reset indicators
     field_names = [inp.get("name", "").lower() for inp in inputs]
     has_email = any("email" in n or "mail" in n for n in field_names)
     has_no_password = not any("password" in n or "passwd" in n for n in field_names)
@@ -47,30 +47,19 @@ def _is_password_reset_form(form):
     if has_email and has_no_password and has_reset_indicator:
         return True
     if has_email and has_no_password and len(inputs) <= 3:
-        # Simple email-only form, could be password reset
         return True
 
     return False
 
 
 def _check_host_in_response(body, headers_dict, evil_host):
-    """Check if the injected host appears in the response body or headers."""
     findings = []
 
-    # Check response body for the evil host
     if evil_host.lower() in body.lower():
-        # Find the context where it appears
         idx = body.lower().find(evil_host.lower())
-        start = max(0, idx - 80)
-        end = min(len(body), idx + len(evil_host) + 80)
+        start, end = max(0, idx - 80), min(len(body), idx + len(evil_host) + 80)
         snippet = body[start:end].replace('\n', ' ').strip()
-
-        # Check if it's in a link/URL context
-        in_link = False
-        for pattern in LINK_REFLECTION_PATTERNS:
-            if pattern.search(body):
-                in_link = True
-                break
+        in_link = any(p.search(body) for p in LINK_REFLECTION_PATTERNS)
 
         findings.append({
             "location": "response body",
@@ -78,7 +67,6 @@ def _check_host_in_response(body, headers_dict, evil_host):
             "snippet": snippet,
         })
 
-    # Check response headers
     for header_name in REDIRECT_HEADERS:
         header_val = headers_dict.get(header_name, "")
         if evil_host.lower() in header_val.lower():
@@ -105,7 +93,7 @@ def _test_host_header_direct(session, url):
             verify=session.config.verify_ssl,
             allow_redirects=False,
         )
-    except Exception as e:
+    except (requests.RequestException, ValueError) as e:
         logger.debug("host_header _test_host_override: request failed: %s", e)
         return
 
@@ -208,7 +196,7 @@ def _test_host_header_direct(session, url):
             verify=session.config.verify_ssl,
             allow_redirects=False,
         )
-    except Exception as e:
+    except (requests.RequestException, ValueError) as e:
         logger.debug("host_header _test_host_override: port injection request failed: %s", e)
         return
 
@@ -287,7 +275,7 @@ def _test_forwarded_headers(session, url):
                 verify=session.config.verify_ssl,
                 allow_redirects=False,
             )
-        except Exception as e:
+        except (requests.RequestException, ValueError) as e:
             logger.debug("host_header _test_forwarded_headers: request failed: %s", e)
             continue
 
@@ -416,7 +404,7 @@ def _test_password_reset_poisoning(session, form):
                 verify=session.config.verify_ssl,
                 allow_redirects=False,
             )
-        except Exception as e:
+        except (requests.RequestException, ValueError) as e:
             logger.debug("host_header _test_password_reset_poisoning: request failed: %s", e)
             continue
 
@@ -535,7 +523,7 @@ def _test_routing_ssrf(session, url):
                 verify=session.config.verify_ssl,
                 allow_redirects=False,
             )
-        except Exception as e:
+        except (requests.RequestException, ValueError) as e:
             logger.debug("host_header _test_routing_ssrf: request failed: %s", e)
             continue
 
@@ -630,7 +618,7 @@ def _test_routing_ssrf(session, url):
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for Host Header Injection...")
+    logger.info("\n[*] Testing for Host Header Injection...")
 
     tested_hosts = set()
 

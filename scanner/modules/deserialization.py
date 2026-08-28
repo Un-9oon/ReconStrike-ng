@@ -11,19 +11,15 @@ JAVA_MAGIC = "aced0005"
 JAVA_MAGIC_B64 = "rO0AB"
 
 PHP_PATTERNS = [
-    re.compile(r'O:\d+:"[^"]+":'),     # O:4:"User":
-    re.compile(r'a:\d+:\{'),            # a:2:{
-    re.compile(r's:\d+:"[^"]*";'),      # s:5:"hello";
-    re.compile(r'i:\d+;'),              # i:42;
+    re.compile(r'O:\d+:"[^"]+":'),
+    re.compile(r'a:\d+:\{'),
+    re.compile(r's:\d+:"[^"]*";'),
+    re.compile(r'i:\d+;'),
 ]
 
 PYTHON_PICKLE_INDICATORS = [
-    b"\x80\x03",    # Protocol 3
-    b"\x80\x04",    # Protocol 4
-    b"\x80\x05",    # Protocol 5
-    b"cos\n",       # pickle opcode
-    b"cposix\n",    # pickle opcode
-    b"c__builtin__",
+    b"\x80\x03", b"\x80\x04", b"\x80\x05",
+    b"cos\n", b"cposix\n", b"c__builtin__",
 ]
 
 DOTNET_VIEWSTATE_PATTERN = re.compile(
@@ -36,41 +32,51 @@ DOTNET_VIEWSTATE_GENERATOR = re.compile(
 )
 
 DESER_ERROR_PATTERNS = [
-    # Java
     (r"java\.io\.(InvalidClassException|StreamCorruptedException|ObjectStreamException)",
      "Java deserialization error"),
     (r"ClassNotFoundException.*readObject", "Java deserialization class not found"),
     (r"java\.io\.ObjectInputStream", "Java ObjectInputStream reference"),
     (r"org\.apache\.commons\.collections\.functors", "Apache Commons Collections (gadget chain)"),
     (r"ysoserial", "ysoserial reference"),
-    # PHP
     (r"unserialize\(\).*error", "PHP unserialize error"),
     (r"__wakeup|__destruct|__toString", "PHP magic method reference"),
     (r"allowed_classes.*false", "PHP unserialize restricted classes"),
-    # Python
     (r"pickle\.(UnpicklingError|loads)", "Python pickle error"),
     (r"_pickle\.UnpicklingError", "Python C pickle error"),
     (r"cPickle", "Python cPickle reference"),
-    # .NET
     (r"System\.Runtime\.Serialization", ".NET serialization error"),
     (r"ViewStateException", ".NET ViewState error"),
     (r"BinaryFormatter", ".NET BinaryFormatter reference"),
     (r"LosFormatter", ".NET LosFormatter reference"),
     (r"ObjectStateFormatter", ".NET ObjectStateFormatter reference"),
-    # General
     (r"(de)?serializ(e|ation).*error", "Deserialization error message"),
 ]
 
 
-def _check_java_deserialization(session: ScanSession) -> None:
-    """Check for Java serialized objects in parameters and cookies."""
+def _looks_like_java_serial(value):
+    if value.lower().startswith(JAVA_MAGIC):
+        return True
+    if value.startswith(JAVA_MAGIC_B64):
+        return True
+    try:
+        decoded = base64.b64decode(value, validate=True)
+        if decoded[:4] == bytes.fromhex(JAVA_MAGIC):
+            return True
+    except (ValueError, TypeError):
+        pass
+    return False
+
+
+def _looks_like_php_serial(value):
+    return any(p.search(value) for p in PHP_PATTERNS)
+
+
+def _check_java_deserialization(session):
     target = session.config.target
 
     for url in list(session.crawled_urls)[:15]:
         parsed = urlparse(url)
-        params = parse_qs(parsed.query)
-
-        for param_name, values in params.items():
+        for param_name, values in parse_qs(parsed.query).items():
             for value in values:
                 if _looks_like_java_serial(value):
                     _report_java_finding(session, url, param_name, value, "URL parameter")
@@ -83,49 +89,29 @@ def _check_java_deserialization(session: ScanSession) -> None:
         resp = session.get(url)
         if not resp:
             continue
-        for header_name in ["X-Session-Data", "X-Auth-Token", "Authorization"]:
+        for header_name in ("X-Session-Data", "X-Auth-Token", "Authorization"):
             header_val = resp.headers.get(header_name, "")
             if header_val and _looks_like_java_serial(header_val):
                 _report_java_finding(session, url, header_name, header_val, "response header")
 
 
-def _looks_like_java_serial(value: str) -> bool:
-    """Check if a value looks like Java serialized data."""
-    if value.lower().startswith(JAVA_MAGIC):
-        return True
-    if value.startswith(JAVA_MAGIC_B64):
-        return True
-    try:
-        decoded = base64.b64decode(value, validate=True)
-        if decoded[:4] == bytes.fromhex(JAVA_MAGIC):
-            return True
-    except Exception as e:
-        logger.debug("deserialization _looks_like_java_serial: base64 decode failed: %s", e)
-    return False
-
-
-def _report_java_finding(
-    session: ScanSession, url: str, param: str, value: str, location_type: str
-) -> None:
-    """Report a Java deserialization finding."""
-    curl_cmd = f"curl -k -v '{url}' 2>&1 | grep -i '{param}'"
+def _report_java_finding(session, url, param, value, location_type):
     short_value = value[:80] + "..." if len(value) > 80 else value
+    curl_cmd = "curl -k -v '{}' 2>&1 | grep -i '{}'".format(url, param)
 
     session.add_finding(Finding(
-        title=f"Java Serialized Object in {location_type}: {param}",
+        title="Java Serialized Object in {}: {}".format(location_type, param),
         severity=Severity.HIGH,
         description=(
-            f"Detected Java serialized data (magic bytes 0xACED0005 or Base64 'rO0AB') "
-            f"in {location_type} '{param}'. If the server deserializes this data using "
-            f"ObjectInputStream without validation, it may be vulnerable to Remote Code "
-            f"Execution via deserialization gadget chains (e.g., Apache Commons Collections)."
-        ),
+            "Detected Java serialized data (magic bytes 0xACED0005 or Base64 'rO0AB') "
+            "in {} '{}'. If the server deserializes this data using "
+            "ObjectInputStream without validation, it may be vulnerable to Remote Code "
+            "Execution via deserialization gadget chains (e.g., Apache Commons Collections)."
+        ).format(location_type, param),
         evidence=(
-            f"URL: {url}\n"
-            f"Location: {location_type} '{param}'\n"
-            f"Value (truncated): {short_value}\n"
-            f"Java serialization magic bytes detected."
-        ),
+            "URL: {}\nLocation: {} '{}'\nValue (truncated): {}\n"
+            "Java serialization magic bytes detected."
+        ).format(url, location_type, param, short_value),
         remediation=(
             "1. Avoid Java native serialization for untrusted data.\n"
             "2. Use JSON or other safe formats instead.\n"
@@ -137,17 +123,17 @@ def _report_java_finding(
         module="deserialization",
         cwe="CWE-502",
         confirmed=True,
-        location=f"{location_type}: {param}",
+        location="{}: {}".format(location_type, param),
         parameter=param,
         curl_command=curl_cmd,
         reproduction_steps=(
-            f"1. Identify Java serialized data in {location_type} '{param}' at {url}\n"
-            f"2. The value begins with Java magic bytes (aced0005 / rO0AB)\n"
-            f"3. Use ysoserial to generate a payload for known gadget chains:\n"
-            f"   $ java -jar ysoserial.jar CommonsCollections1 'id' | base64\n"
-            f"4. Replace the {location_type} value with the crafted payload\n"
-            f"5. Observe server behavior (RCE, errors, timing differences)"
-        ),
+            "1. Identify Java serialized data in {} '{}' at {}\n"
+            "2. The value begins with Java magic bytes (aced0005 / rO0AB)\n"
+            "3. Use ysoserial to generate a payload for known gadget chains:\n"
+            "   $ java -jar ysoserial.jar CommonsCollections1 'id' | base64\n"
+            "4. Replace the {} value with the crafted payload\n"
+            "5. Observe server behavior (RCE, errors, timing differences)"
+        ).format(location_type, param, url, location_type),
         developer_fix=(
             "Replace Java native serialization with a safe alternative:\n\n"
             "// DANGEROUS - Do not use\n"
@@ -168,22 +154,17 @@ def _report_java_finding(
             "https://cwe.mitre.org/data/definitions/502.html"
         ),
         detection_method=(
-            f"Scanned {location_type}s for Java serialization magic bytes "
-            f"(0xACED0005 hex / 'rO0AB' Base64). Found serialized Java object "
-            f"in '{param}'."
-        ),
+            "Scanned {}s for Java serialization magic bytes "
+            "(0xACED0005 hex / 'rO0AB' Base64). Found serialized Java object in '{}'."
+        ).format(location_type, param),
     ))
 
 
-def _check_php_deserialization(session: ScanSession) -> None:
-    """Check for PHP serialized objects in parameters, cookies, and form fields."""
+def _check_php_deserialization(session):
     target = session.config.target
 
     for url in list(session.crawled_urls)[:15]:
-        parsed = urlparse(url)
-        params = parse_qs(parsed.query)
-
-        for param_name, values in params.items():
+        for param_name, values in parse_qs(urlparse(url).query).items():
             for value in values:
                 if _looks_like_php_serial(value):
                     _report_php_finding(session, url, param_name, value, "URL parameter")
@@ -195,13 +176,12 @@ def _check_php_deserialization(session: ScanSession) -> None:
             decoded = base64.b64decode(cookie_value, validate=True).decode("utf-8", errors="ignore")
             if _looks_like_php_serial(decoded):
                 _report_php_finding(session, target, cookie_name, decoded, "cookie (base64)")
-        except Exception as e:
-            logger.debug("deserialization _check_php_deserialization: base64 decode failed: %s", e)
+        except (ValueError, TypeError):
+            pass
 
     for form in session.forms[:10]:
         for inp in form.get("inputs", []):
-            value = inp.get("value", "")
-            name = inp.get("name", "")
+            value, name = inp.get("value", ""), inp.get("name", "")
             if value and _looks_like_php_serial(value):
                 _report_php_finding(
                     session, form.get("source_url", target),
@@ -209,36 +189,22 @@ def _check_php_deserialization(session: ScanSession) -> None:
                 )
 
 
-def _looks_like_php_serial(value: str) -> bool:
-    """Check if a value looks like PHP serialized data."""
-    for pattern in PHP_PATTERNS:
-        if pattern.search(value):
-            return True
-    return False
-
-
-def _report_php_finding(
-    session: ScanSession, url: str, param: str, value: str, location_type: str
-) -> None:
-    """Report a PHP deserialization finding."""
-    curl_cmd = f"curl -k -v '{url}'"
+def _report_php_finding(session, url, param, value, location_type):
     short_value = value[:80] + "..." if len(value) > 80 else value
 
     session.add_finding(Finding(
-        title=f"PHP Serialized Object in {location_type}: {param}",
+        title="PHP Serialized Object in {}: {}".format(location_type, param),
         severity=Severity.HIGH,
         description=(
-            f"Detected PHP serialized data pattern in {location_type} '{param}'. "
-            f"If the application calls unserialize() on user-controlled data without "
-            f"restricting allowed classes, it may be vulnerable to PHP Object Injection, "
-            f"potentially leading to RCE via __wakeup/__destruct magic methods."
-        ),
+            "Detected PHP serialized data pattern in {} '{}'. "
+            "If the application calls unserialize() on user-controlled data without "
+            "restricting allowed classes, it may be vulnerable to PHP Object Injection, "
+            "potentially leading to RCE via __wakeup/__destruct magic methods."
+        ).format(location_type, param),
         evidence=(
-            f"URL: {url}\n"
-            f"Location: {location_type} '{param}'\n"
-            f"Value (truncated): {short_value}\n"
-            f"PHP serialization pattern detected."
-        ),
+            "URL: {}\nLocation: {} '{}'\nValue (truncated): {}\n"
+            "PHP serialization pattern detected."
+        ).format(url, location_type, param, short_value),
         remediation=(
             "1. Never unserialize() untrusted data.\n"
             "2. Use json_decode() instead.\n"
@@ -249,17 +215,17 @@ def _report_php_finding(
         module="deserialization",
         cwe="CWE-502",
         confirmed=True,
-        location=f"{location_type}: {param}",
+        location="{}: {}".format(location_type, param),
         parameter=param,
-        curl_command=curl_cmd,
+        curl_command="curl -k -v '{}'".format(url),
         reproduction_steps=(
-            f"1. Identify PHP serialized data in {location_type} '{param}' at {url}\n"
-            f"2. The value matches PHP serialization patterns (O:, a:, s:, i:)\n"
-            f"3. Craft a PHP Object Injection payload targeting known gadget chains:\n"
-            f"   O:21:\"JDatabaseDriverMysqli\":0:{{}}\n"
-            f"4. Replace the parameter value and observe server behavior\n"
-            f"5. Use PHPGGC to generate framework-specific payloads"
-        ),
+            "1. Identify PHP serialized data in {} '{}' at {}\n"
+            "2. The value matches PHP serialization patterns (O:, a:, s:, i:)\n"
+            "3. Craft a PHP Object Injection payload targeting known gadget chains:\n"
+            "   O:21:\"JDatabaseDriverMysqli\":0:{{}}\n"
+            "4. Replace the parameter value and observe server behavior\n"
+            "5. Use PHPGGC to generate framework-specific payloads"
+        ).format(location_type, param, url),
         developer_fix=(
             "Replace unserialize() with JSON:\n\n"
             "// DANGEROUS\n"
@@ -277,15 +243,13 @@ def _report_php_finding(
             "https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html"
         ),
         detection_method=(
-            f"Scanned {location_type}s for PHP serialization patterns "
-            f"(O:N:\"class\", a:N:{{, s:N:\"\", i:N;). Found serialized PHP data "
-            f"in '{param}'."
-        ),
+            "Scanned {}s for PHP serialization patterns "
+            "(O:N:\"class\", a:N:{{, s:N:\"\", i:N;). Found serialized PHP data in '{}'."
+        ).format(location_type, param),
     ))
 
 
-def _check_dotnet_viewstate(session: ScanSession) -> None:
-    """Check for .NET ViewState deserialization issues."""
+def _check_dotnet_viewstate(session):
     for url in list(session.crawled_urls)[:20]:
         resp = session.get(url)
         if not resp:
@@ -300,16 +264,15 @@ def _check_dotnet_viewstate(session: ScanSession) -> None:
         generator_match = DOTNET_VIEWSTATE_GENERATOR.search(body)
         generator = generator_match.group(1) if generator_match else "N/A"
 
-        is_encrypted = True
-        mac_enabled = True
+        is_encrypted, mac_enabled = True, True
         try:
             decoded = base64.b64decode(viewstate)
             if decoded[:2] == b"\xff\x01":
                 is_encrypted = False
             if len(decoded) < 20:
                 mac_enabled = False
-        except Exception as e:
-            logger.debug("deserialization _check_dotnet_viewstate: base64 decode failed: %s", e)
+        except (ValueError, TypeError):
+            pass
 
         issues = []
         severity = Severity.INFO
@@ -317,11 +280,9 @@ def _check_dotnet_viewstate(session: ScanSession) -> None:
         if not is_encrypted:
             issues.append("ViewState is not encrypted - data visible to client")
             severity = Severity.MEDIUM
-
         if not mac_enabled:
             issues.append("ViewState MAC validation may be disabled - tampering possible")
             severity = Severity.CRITICAL
-
         if viewstate and len(viewstate) > 10:
             issues.append("ViewState present - potential deserialization attack surface")
             if severity == Severity.INFO:
@@ -330,26 +291,27 @@ def _check_dotnet_viewstate(session: ScanSession) -> None:
         if not issues:
             continue
 
-        curl_cmd = f"curl -k -s '{url}' | grep -o '__VIEWSTATE[^\"]*\"[^\"]*\"'"
+        curl_cmd = "curl -k -s '{}' | grep -o '__VIEWSTATE[^\"]*\"[^\"]*\"'".format(url)
 
         session.add_finding(Finding(
-            title=f"ASP.NET ViewState Deserialization Surface",
+            title="ASP.NET ViewState Deserialization Surface",
             severity=severity,
             description=(
-                f"The page at {url} uses ASP.NET ViewState. "
-                f"{'Issues: ' + '; '.join(issues) + '.' if issues else ''} "
-                f"If ViewState MAC validation is disabled or the machine key is compromised, "
-                f"an attacker can craft malicious ViewState payloads to achieve RCE via "
-                f"LosFormatter/ObjectStateFormatter deserialization."
-            ),
+                "The page at {} uses ASP.NET ViewState. "
+                "{} "
+                "If ViewState MAC validation is disabled or the machine key is compromised, "
+                "an attacker can craft malicious ViewState payloads to achieve RCE via "
+                "LosFormatter/ObjectStateFormatter deserialization."
+            ).format(url, "Issues: {}.".format("; ".join(issues)) if issues else ""),
             evidence=(
-                f"URL: {url}\n"
-                f"ViewState (first 100 chars): {viewstate[:100]}...\n"
-                f"ViewState Length: {len(viewstate)} chars\n"
-                f"ViewStateGenerator: {generator}\n"
-                f"Encrypted: {is_encrypted}\n"
-                f"MAC likely enabled: {mac_enabled}"
-            ),
+                "URL: {}\n"
+                "ViewState (first 100 chars): {}...\n"
+                "ViewState Length: {} chars\n"
+                "ViewStateGenerator: {}\n"
+                "Encrypted: {}\n"
+                "MAC likely enabled: {}"
+            ).format(url, viewstate[:100], len(viewstate),
+                     generator, is_encrypted, mac_enabled),
             remediation=(
                 "1. Ensure ViewState MAC validation is enabled (default in .NET 4.5+).\n"
                 "2. Encrypt ViewState with a strong machine key.\n"
@@ -364,13 +326,13 @@ def _check_dotnet_viewstate(session: ScanSession) -> None:
             location="__VIEWSTATE hidden field",
             curl_command=curl_cmd,
             reproduction_steps=(
-                f"1. Request {url} and extract the __VIEWSTATE value\n"
-                f"2. Decode the base64 ViewState value\n"
-                f"3. If MAC is disabled, use ysoserial.net to craft a payload:\n"
-                f"   ysoserial.exe -g TypeConfuseDelegate -f LosFormatter -c 'cmd'\n"
-                f"4. Replace __VIEWSTATE value and submit the form\n"
-                f"5. Tool: https://github.com/0xACB/viewgen"
-            ),
+                "1. Request {} and extract the __VIEWSTATE value\n"
+                "2. Decode the base64 ViewState value\n"
+                "3. If MAC is disabled, use ysoserial.net to craft a payload:\n"
+                "   ysoserial.exe -g TypeConfuseDelegate -f LosFormatter -c 'cmd'\n"
+                "4. Replace __VIEWSTATE value and submit the form\n"
+                "5. Tool: https://github.com/0xACB/viewgen"
+            ).format(url),
             developer_fix=(
                 "Ensure ViewState protection in web.config:\n\n"
                 "<system.web>\n"
@@ -397,8 +359,7 @@ def _check_dotnet_viewstate(session: ScanSession) -> None:
         ))
 
 
-def _check_deserialization_errors(session: ScanSession) -> None:
-    """Send malformed serialized data and check for revealing error messages."""
+def _check_deserialization_errors(session):
     test_payloads = {
         "java_corrupt": base64.b64encode(bytes.fromhex("aced0005") + b"\x00" * 10).decode(),
         "php_corrupt": 'O:9:"FakeClass":0:{}',
@@ -415,15 +376,12 @@ def _check_deserialization_errors(session: ScanSession) -> None:
             resp_baseline = session.get(url)
             if not resp_baseline:
                 continue
-            baseline_status = resp_baseline.status_code
-            baseline_len = len(resp_baseline.text or "")
             baseline_time = resp_baseline.elapsed.total_seconds()
 
             for payload_name, payload in test_payloads.items():
                 new_params = dict(params)
                 new_params[param_name] = [payload]
-                new_query = urlencode(new_params, doseq=True)
-                test_url = urlunparse(parsed._replace(query=new_query))
+                test_url = urlunparse(parsed._replace(query=urlencode(new_params, doseq=True)))
 
                 start = time.time()
                 resp = session.get(test_url)
@@ -431,187 +389,182 @@ def _check_deserialization_errors(session: ScanSession) -> None:
 
                 if not resp:
                     continue
-
                 body = resp.text or ""
 
+                # Check for deserialization error disclosure
                 for pattern_str, error_desc in DESER_ERROR_PATTERNS:
                     match = re.search(pattern_str, body, re.IGNORECASE)
-                    if match:
-                        curl_cmd = (
-                            f"curl -k -s '{test_url}' | "
-                            f"grep -iE '{pattern_str[:40]}'"
-                        )
-                        session.add_finding(Finding(
-                            title=f"Deserialization Error Disclosure: {error_desc}",
-                            severity=Severity.MEDIUM,
-                            description=(
-                                f"Sending a {payload_name} payload to parameter '{param_name}' "
-                                f"at {url} triggered an error message revealing deserialization "
-                                f"internals: '{error_desc}'. This confirms the application "
-                                f"processes serialized data and may be vulnerable to "
-                                f"deserialization attacks."
-                            ),
-                            evidence=(
-                                f"URL: {test_url}\n"
-                                f"Parameter: {param_name}\n"
-                                f"Payload Type: {payload_name}\n"
-                                f"Payload: {payload[:60]}\n"
-                                f"Error Pattern: {error_desc}\n"
-                                f"Matched Text: {match.group()}\n"
-                                f"HTTP Status: {resp.status_code}"
-                            ),
-                            remediation=(
-                                "1. Suppress detailed error messages in production.\n"
-                                "2. Replace deserialization with safe alternatives (JSON).\n"
-                                "3. Implement input validation before deserialization.\n"
-                                "4. Use custom error pages that do not leak internals."
-                            ),
-                            url=url,
-                            module="deserialization",
-                            cwe="CWE-502",
-                            confirmed=True,
-                            location=f"Parameter: {param_name}",
-                            parameter=param_name,
-                            payload=payload,
-                            curl_command=curl_cmd,
-                            reproduction_steps=(
-                                f"1. Send a {payload_name} payload to {param_name}:\n"
-                                f"   {test_url}\n"
-                                f"2. Observe the error response containing: {error_desc}\n"
-                                f"3. This confirms deserialization processing on the server\n"
-                                f"4. Run: {curl_cmd}"
-                            ),
-                            developer_fix=(
-                                "1. Disable verbose error messages in production:\n"
-                                "   - PHP: display_errors = Off\n"
-                                "   - Java: configure custom error pages in web.xml\n"
-                                "   - .NET: <customErrors mode=\"On\" />\n\n"
-                                "2. Replace deserialization:\n"
-                                "   - Use json_decode() / JSON.parse() / ObjectMapper\n"
-                                "   - Never deserialize untrusted input\n\n"
-                                "3. If deserialization is required, whitelist allowed types."
-                            ),
-                            affected_component="Error handling / deserialization",
-                            references=(
-                                "https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html\n"
-                                "https://cwe.mitre.org/data/definitions/502.html"
-                            ),
-                            detection_method=(
-                                f"Sent malformed serialized payloads ({payload_name}) to "
-                                f"parameter '{param_name}' and matched error response against "
-                                f"known deserialization error patterns. Detected: {error_desc}."
-                            ),
-                        ))
-                        break
+                    if not match:
+                        continue
 
+                    curl_cmd = "curl -k -s '{}' | grep -iE '{}'".format(test_url, pattern_str[:40])
+                    session.add_finding(Finding(
+                        title="Deserialization Error Disclosure: {}".format(error_desc),
+                        severity=Severity.MEDIUM,
+                        description=(
+                            "Sending a {} payload to parameter '{}' "
+                            "at {} triggered an error message revealing deserialization "
+                            "internals: '{}'. This confirms the application "
+                            "processes serialized data and may be vulnerable to "
+                            "deserialization attacks."
+                        ).format(payload_name, param_name, url, error_desc),
+                        evidence=(
+                            "URL: {}\nParameter: {}\nPayload Type: {}\n"
+                            "Payload: {}\nError Pattern: {}\n"
+                            "Matched Text: {}\nHTTP Status: {}"
+                        ).format(test_url, param_name, payload_name,
+                                 payload[:60], error_desc, match.group(), resp.status_code),
+                        remediation=(
+                            "1. Suppress detailed error messages in production.\n"
+                            "2. Replace deserialization with safe alternatives (JSON).\n"
+                            "3. Implement input validation before deserialization.\n"
+                            "4. Use custom error pages that do not leak internals."
+                        ),
+                        url=url,
+                        module="deserialization",
+                        cwe="CWE-502",
+                        confirmed=True,
+                        location="Parameter: {}".format(param_name),
+                        parameter=param_name,
+                        payload=payload,
+                        curl_command=curl_cmd,
+                        reproduction_steps=(
+                            "1. Send a {} payload to {}:\n"
+                            "   {}\n"
+                            "2. Observe the error response containing: {}\n"
+                            "3. This confirms deserialization processing on the server\n"
+                            "4. Run: {}"
+                        ).format(payload_name, param_name, test_url, error_desc, curl_cmd),
+                        developer_fix=(
+                            "1. Disable verbose error messages in production:\n"
+                            "   - PHP: display_errors = Off\n"
+                            "   - Java: configure custom error pages in web.xml\n"
+                            "   - .NET: <customErrors mode=\"On\" />\n\n"
+                            "2. Replace deserialization:\n"
+                            "   - Use json_decode() / JSON.parse() / ObjectMapper\n"
+                            "   - Never deserialize untrusted input\n\n"
+                            "3. If deserialization is required, whitelist allowed types."
+                        ),
+                        affected_component="Error handling / deserialization",
+                        references=(
+                            "https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html\n"
+                            "https://cwe.mitre.org/data/definitions/502.html"
+                        ),
+                        detection_method=(
+                            "Sent malformed serialized payloads ({}) to "
+                            "parameter '{}' and matched error response against "
+                            "known deserialization error patterns. Detected: {}."
+                        ).format(payload_name, param_name, error_desc),
+                    ))
+                    break
+
+                # Timing anomaly check
                 time_diff = elapsed - baseline_time
                 if time_diff > 3.0 and baseline_time < 2.0:
                     session.add_finding(Finding(
-                        title=f"Deserialization Timing Anomaly: {param_name}",
+                        title="Deserialization Timing Anomaly: {}".format(param_name),
                         severity=Severity.LOW,
                         description=(
-                            f"Sending a {payload_name} payload to '{param_name}' caused a "
-                            f"significant response time increase ({time_diff:.1f}s slower). "
-                            f"This may indicate server-side deserialization processing."
-                        ),
+                            "Sending a {} payload to '{}' caused a "
+                            "significant response time increase ({:.1f}s slower). "
+                            "This may indicate server-side deserialization processing."
+                        ).format(payload_name, param_name, time_diff),
                         evidence=(
-                            f"URL: {url}\n"
-                            f"Parameter: {param_name}\n"
-                            f"Baseline response time: {baseline_time:.2f}s\n"
-                            f"Payload response time: {elapsed:.2f}s\n"
-                            f"Difference: {time_diff:.2f}s\n"
-                            f"Payload type: {payload_name}"
-                        ),
+                            "URL: {}\nParameter: {}\n"
+                            "Baseline response time: {:.2f}s\n"
+                            "Payload response time: {:.2f}s\n"
+                            "Difference: {:.2f}s\nPayload type: {}"
+                        ).format(url, param_name, baseline_time,
+                                 elapsed, time_diff, payload_name),
                         remediation="Investigate the parameter for deserialization processing.",
                         url=url,
                         module="deserialization",
                         cwe="CWE-502",
                         confirmed=False,
-                        location=f"Parameter: {param_name}",
+                        location="Parameter: {}".format(param_name),
                         parameter=param_name,
                         payload=payload,
                         detection_method=(
-                            f"Compared response times between normal and serialized payloads "
-                            f"for parameter '{param_name}'. Detected {time_diff:.1f}s anomaly."
-                        ),
+                            "Compared response times between normal and serialized payloads "
+                            "for parameter '{}'. Detected {:.1f}s anomaly."
+                        ).format(param_name, time_diff),
                     ))
 
 
-def _check_python_pickle(session: ScanSession) -> None:
-    """Check for Python pickle indicators in cookies and parameters."""
+def _check_python_pickle(session):
     target = session.config.target
 
     for cookie_name, cookie_value in session.session.cookies.items():
         try:
             decoded = base64.b64decode(cookie_value, validate=True)
             for indicator in PYTHON_PICKLE_INDICATORS:
-                if indicator in decoded:
-                    curl_cmd = f"curl -k -v '{target}' 2>&1 | grep -i 'set-cookie.*{cookie_name}'"
-                    session.add_finding(Finding(
-                        title=f"Python Pickle Object in Cookie: {cookie_name}",
-                        severity=Severity.HIGH,
-                        description=(
-                            f"The cookie '{cookie_name}' contains what appears to be Python "
-                            f"pickle serialized data. Python's pickle.loads() on untrusted data "
-                            f"allows arbitrary code execution via __reduce__ methods."
-                        ),
-                        evidence=(
-                            f"Cookie: {cookie_name}\n"
-                            f"Value (base64): {cookie_value[:80]}...\n"
-                            f"Pickle indicator found: {indicator!r}"
-                        ),
-                        remediation=(
-                            "1. Never use pickle.loads() on untrusted data.\n"
-                            "2. Replace with JSON or other safe serialization.\n"
-                            "3. Use hmac signing to verify data integrity before deserializing."
-                        ),
-                        url=target,
-                        module="deserialization",
-                        cwe="CWE-502",
-                        confirmed=True,
-                        location=f"Cookie: {cookie_name}",
-                        parameter=cookie_name,
-                        curl_command=curl_cmd,
-                        reproduction_steps=(
-                            f"1. Decode the base64 value of cookie '{cookie_name}'\n"
-                            f"2. Identify pickle protocol bytes in the decoded data\n"
-                            f"3. Craft a malicious pickle payload:\n"
-                            f"   import pickle, os\n"
-                            f"   class Exploit:\n"
-                            f"       def __reduce__(self):\n"
-                            f"           return (os.system, ('id',))\n"
-                            f"   payload = base64.b64encode(pickle.dumps(Exploit()))\n"
-                            f"4. Replace the cookie value and send the request"
-                        ),
-                        developer_fix=(
-                            "Replace pickle with JSON:\n\n"
-                            "# DANGEROUS\n"
-                            "data = pickle.loads(base64.b64decode(cookie_value))  # RCE!\n\n"
-                            "# SAFE\n"
-                            "data = json.loads(base64.b64decode(cookie_value))\n\n"
-                            "# If you need to sign data:\n"
-                            "from itsdangerous import URLSafeSerializer\n"
-                            "s = URLSafeSerializer(secret_key)\n"
-                            "data = s.loads(cookie_value)  # signed + JSON"
-                        ),
-                        affected_component="Python session/cookie serialization",
-                        references=(
-                            "https://docs.python.org/3/library/pickle.html#restricting-globals\n"
-                            "https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html"
-                        ),
-                        detection_method=(
-                            f"Base64-decoded cookie '{cookie_name}' and scanned for "
-                            f"Python pickle protocol bytes and opcodes."
-                        ),
-                    ))
-                    break
-        except Exception as e:
-            logger.debug("deserialization _check_python_pickle: operation failed: %s", e)
+                if indicator not in decoded:
+                    continue
+
+                curl_cmd = "curl -k -v '{}' 2>&1 | grep -i 'set-cookie.*{}'".format(target, cookie_name)
+                session.add_finding(Finding(
+                    title="Python Pickle Object in Cookie: {}".format(cookie_name),
+                    severity=Severity.HIGH,
+                    description=(
+                        "The cookie '{}' contains what appears to be Python "
+                        "pickle serialized data. Python's pickle.loads() on untrusted data "
+                        "allows arbitrary code execution via __reduce__ methods."
+                    ).format(cookie_name),
+                    evidence=(
+                        "Cookie: {}\nValue (base64): {}...\n"
+                        "Pickle indicator found: {!r}"
+                    ).format(cookie_name, cookie_value[:80], indicator),
+                    remediation=(
+                        "1. Never use pickle.loads() on untrusted data.\n"
+                        "2. Replace with JSON or other safe serialization.\n"
+                        "3. Use hmac signing to verify data integrity before deserializing."
+                    ),
+                    url=target,
+                    module="deserialization",
+                    cwe="CWE-502",
+                    confirmed=True,
+                    location="Cookie: {}".format(cookie_name),
+                    parameter=cookie_name,
+                    curl_command=curl_cmd,
+                    reproduction_steps=(
+                        "1. Decode the base64 value of cookie '{}'\n"
+                        "2. Identify pickle protocol bytes in the decoded data\n"
+                        "3. Craft a malicious pickle payload:\n"
+                        "   import pickle, os\n"
+                        "   class Exploit:\n"
+                        "       def __reduce__(self):\n"
+                        "           return (os.system, ('id',))\n"
+                        "   payload = base64.b64encode(pickle.dumps(Exploit()))\n"
+                        "4. Replace the cookie value and send the request"
+                    ).format(cookie_name),
+                    developer_fix=(
+                        "Replace pickle with JSON:\n\n"
+                        "# DANGEROUS\n"
+                        "data = pickle.loads(base64.b64decode(cookie_value))  # RCE!\n\n"
+                        "# SAFE\n"
+                        "data = json.loads(base64.b64decode(cookie_value))\n\n"
+                        "# If you need to sign data:\n"
+                        "from itsdangerous import URLSafeSerializer\n"
+                        "s = URLSafeSerializer(secret_key)\n"
+                        "data = s.loads(cookie_value)  # signed + JSON"
+                    ),
+                    affected_component="Python session/cookie serialization",
+                    references=(
+                        "https://docs.python.org/3/library/pickle.html#restricting-globals\n"
+                        "https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html"
+                    ),
+                    detection_method=(
+                        "Base64-decoded cookie '{}' and scanned for "
+                        "Python pickle protocol bytes and opcodes."
+                    ).format(cookie_name),
+                ))
+                break
+        except (ValueError, TypeError):
+            pass
 
 
 def run(session: ScanSession) -> None:
-    """Run deserialization vulnerability checks."""
-    print("\n[*] Testing for insecure deserialization...")
+    logger.info("\n[*] Testing for insecure deserialization...")
 
     _check_java_deserialization(session)
     _check_php_deserialization(session)

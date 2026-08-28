@@ -52,7 +52,6 @@ def _build_curl(method, url, data=None, content_type=None):
 
 
 def _check_pollution_reflected(body, baseline_body):
-    """Check if any prototype pollution indicators appear in response but not baseline."""
     for pattern, description in POLLUTION_INDICATORS:
         if re.search(pattern, body, re.IGNORECASE):
             if not baseline_body or not re.search(pattern, baseline_body, re.IGNORECASE):
@@ -61,7 +60,6 @@ def _check_pollution_reflected(body, baseline_body):
 
 
 def _check_error_indicators(body, baseline_body):
-    """Check for error messages indicating prototype chain interaction."""
     for pattern, description in ERROR_PATTERNS:
         if re.search(pattern, body, re.IGNORECASE):
             if not baseline_body or not re.search(pattern, baseline_body, re.IGNORECASE):
@@ -91,18 +89,12 @@ def _response_differs(baseline_resp, test_resp):
 
 
 def _test_url_params(session, url):
-    """Test URL parameters for prototype pollution via query string injection."""
     parsed = urlparse(url)
 
-    # Test appending __proto__ payloads to existing query strings
     for payload, description in PROTO_PAYLOADS_URL:
-        if parsed.query:
-            test_query = parsed.query + "&" + payload
-        else:
-            test_query = payload
+        test_query = (parsed.query + "&" + payload) if parsed.query else payload
         test_url = urlunparse(parsed._replace(query=test_query))
 
-        # Get baseline without pollution payload
         baseline_resp = session.get(url)
         baseline_text = baseline_resp.text if baseline_resp else ""
 
@@ -110,7 +102,6 @@ def _test_url_params(session, url):
         if not resp or resp.status_code in (404, 403):
             continue
 
-        # Check for reflected pollution properties
         pattern, indicator = _check_pollution_reflected(resp.text, baseline_text)
         if pattern:
             snippet = _extract_snippet(resp.text, pattern)
@@ -177,7 +168,6 @@ def _test_url_params(session, url):
             ))
             return
 
-        # Check for error-based detection
         err_pattern, err_desc = _check_error_indicators(resp.text, baseline_text)
         if err_pattern:
             snippet = _extract_snippet(resp.text, err_pattern)
@@ -241,7 +231,6 @@ def _test_url_params(session, url):
 
 
 def _test_forms_json(session, form):
-    """Test form submissions with JSON bodies for prototype pollution."""
     action = form.get("action", "")
     method = form.get("method", "post").lower()
     inputs = form.get("inputs", [])
@@ -250,12 +239,7 @@ def _test_forms_json(session, form):
     if method != "post":
         return
 
-    # Build baseline JSON body
-    baseline_json = {}
-    for inp in inputs:
-        name = inp.get("name")
-        if name:
-            baseline_json[name] = inp.get("value", "test")
+    baseline_json = {inp["name"]: inp.get("value", "test") for inp in inputs if inp.get("name")}
 
     baseline_resp = session.post(action, json=baseline_json)
     if not baseline_resp:
@@ -268,14 +252,13 @@ def _test_forms_json(session, form):
 
         try:
             resp = session.post(action, json=test_json)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.debug("prototype_pollution _test_forms_json: request failed: %s", e)
             continue
 
         if not resp or resp.status_code in (404, 403):
             continue
 
-        # Check for reflected pollution
         pattern, indicator = _check_pollution_reflected(resp.text, baseline_text)
         if pattern:
             snippet = _extract_snippet(resp.text, pattern)
@@ -343,7 +326,6 @@ def _test_forms_json(session, form):
             ))
             return
 
-        # Check for error-based indicators
         err_pattern, err_desc = _check_error_indicators(resp.text, baseline_text)
         if err_pattern:
             snippet = _extract_snippet(resp.text, err_pattern)
@@ -403,7 +385,7 @@ def _test_forms_json(session, form):
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for Prototype Pollution...")
+    logger.info("\n[*] Testing for Prototype Pollution...")
 
     for url in session.crawled_urls:
         _test_url_params(session, url)

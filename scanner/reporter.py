@@ -3,21 +3,18 @@ import os
 from datetime import datetime, timezone
 
 from scanner.core import ScanSession, Severity
+from scanner.log import logger
 from scanner import __version__
 
 
 def generate_html_report(session: ScanSession, output_path: str, compliance_data: dict = None) -> str:
+    output_path = os.path.realpath(output_path)
     findings = sorted(session.findings, key=lambda f: f.severity.score, reverse=True)
 
-    severity_counts = {}
-    for s in Severity:
-        severity_counts[s.value] = sum(1 for f in findings if f.severity == s)
-
-    total = len(findings)
-    confirmed = sum(1 for f in findings if f.confirmed)
+    severity_counts = {s.value: sum(1 for f in findings if f.severity == s) for s in Severity}
+    total, confirmed = len(findings), sum(1 for f in findings if f.confirmed)
     duration = (session.end_time or 0) - (session.start_time or 0)
-    urls_scanned = len(session.crawled_urls)
-    forms_found = len(session.forms)
+    urls_scanned, forms_found = len(session.crawled_urls), len(session.forms)
 
     severity_colors = {
         "CRITICAL": "#8b0000",
@@ -261,8 +258,9 @@ table tr:hover {{ background:#1a2744; }}
 </body>
 </html>"""
 
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    with open(output_path, "w") as f:
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True, mode=0o700)
+    fd = os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         f.write(report)
 
     return output_path
@@ -271,35 +269,34 @@ table tr:hover {{ background:#1a2744; }}
 def print_summary(session: ScanSession):
     findings = session.findings
     if not findings:
-        print("\n  No vulnerabilities found.")
+        logger.info("No vulnerabilities found.")
         return
 
-    print(f"\n  {'='*60}")
-    print(f"  SCAN SUMMARY")
-    print(f"  {'='*60}")
+    logger.info("=" * 60)
+    logger.info("SCAN SUMMARY")
+    logger.info("=" * 60)
 
     for severity in Severity:
         count = sum(1 for f in findings if f.severity == severity)
         if count:
-            print(f"  {severity.color}{severity.value:10s}: {count}\033[0m")
+            logger.info("  %s%s: %d\033[0m", severity.color, severity.value, count)
 
     confirmed = sum(1 for f in findings if f.confirmed)
-    print(f"  {'─'*60}")
-    print(f"  Total: {len(findings)} ({confirmed} confirmed)")
+    logger.info("-" * 60)
+    logger.info("Total: %d (%d confirmed)", len(findings), confirmed)
 
     risk = _calculate_risk_score(findings)
     label, _ = _risk_label(risk)
-    print(f"  Risk Score: {risk}/100 ({label})")
+    logger.info("Risk Score: %d/100 (%s)", risk, label)
 
 
 def _module_summary_cards(findings, severity_colors) -> str:
     modules = {}
     for f in findings:
-        if f.module not in modules:
-            modules[f.module] = {"count": 0, "max_severity": None}
-        modules[f.module]["count"] += 1
-        if modules[f.module]["max_severity"] is None or f.severity.score > modules[f.module]["max_severity"].score:
-            modules[f.module]["max_severity"] = f.severity
+        m = modules.setdefault(f.module, {"count": 0, "max_severity": None})
+        m["count"] += 1
+        if m["max_severity"] is None or f.severity.score > m["max_severity"].score:
+            m["max_severity"] = f.severity
 
     cards = ""
     for mod, data in sorted(modules.items(), key=lambda x: x[1]["max_severity"].score if x[1]["max_severity"] else 0, reverse=True):
@@ -356,24 +353,8 @@ def _calculate_risk_score(findings) -> int:
     if not findings:
         return 0
     
-    # Calculate score based on the highest severity finding
-    max_score = 0
     scores = {"CRITICAL": 100, "HIGH": 74, "MEDIUM": 49, "LOW": 24, "INFO": 0}
-    
-    for f in findings:
-        base = scores[f.severity.value]
-        # Still give a slight bump for confirmed findings within their tier
-        if f.confirmed and base > 0:
-            # Prevent a confirmed high from jumping to critical, etc.
-            bump = {"HIGH": 74, "MEDIUM": 49, "LOW": 24}.get(f.severity.value, base)
-            if bump == base and f.severity.value != "CRITICAL":
-                pass  # For info
-
-        score = base
-        if score > max_score:
-            max_score = score
-            
-    return max_score
+    return max((scores[f.severity.value] for f in findings), default=0)
 
 
 def _risk_label(score: int) -> tuple[str, str]:

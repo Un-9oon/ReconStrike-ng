@@ -57,7 +57,7 @@ graph TD
 
 # 4. Scan Modules and Coverage
 
-ReconStrike encompasses 43 specialized modules designed with a **zero false positive architecture** (utilizing baseline behavioral comparison and double-verification).
+ReconStrike encompasses 43 specialized modules designed with a **false positive reduction architecture** (utilizing baseline behavioral comparison and double-verification).
 
 ### 4.1 Injection & Server-Side
 - **SQL Injection:** Blind, Error-based, and Time-based inference.

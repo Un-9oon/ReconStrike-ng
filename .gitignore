@@ -26,6 +26,7 @@ env/
 
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
 
 *.bak
@@ -33,3 +34,16 @@ htmlcov/
 
 *.pdf
 add_evasion.py
+
+# Debian build artifacts
+*.deb
+*.buildinfo
+*.changes
+debian/.debhelper/
+debian/reconstrike-ng/
+obj-*/
+
+# Scan output
+*.json
+!package.json
+!package-lock.json

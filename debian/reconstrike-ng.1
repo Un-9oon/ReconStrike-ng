@@ -1,8 +1,8 @@
-.TH RECONSTRIKE 1 "2026-07-25" "ReconStrike-ng 3.1.0" "User Commands"
+.TH RECONSTRIKE-NG 1 "2026-08-28" "ReconStrike-ng 3.1.1" "User Commands"
 .SH NAME
-reconstrike \- Advanced Web & Network Vulnerability Assessment Framework
+reconstrike-ng \- Advanced Web & Network Vulnerability Assessment Framework
 .SH SYNOPSIS
-.B reconstrike
+.B reconstrike-ng
 .RB [ \-t
 .IR TARGET ]
 .RB [ \-\fIOPTIONS\fR ]
@@ -17,7 +17,7 @@ Key features include:
 .IP \(bu 2
 43 vulnerability scan modules covering OWASP Top 10 and beyond
 .IP \(bu 2
-Zero false positive architecture with baseline comparison
+False positive reduction with baseline comparison
 .IP \(bu 2
 Concurrent multi-threaded crawler
 .IP \(bu 2
@@ -219,37 +219,37 @@ Maximum scan (all modules, depth 7, API scan, compliance, PDF report)
 Basic scan:
 .PP
 .RS 4
-reconstrike \-t https://example.com
+reconstrike-ng \-t https://example.com
 .RE
 .PP
 Deep scan with compliance:
 .PP
 .RS 4
-reconstrike \-t https://example.com \-\-profile deep \-\-compliance
+reconstrike-ng \-t https://example.com \-\-profile deep \-\-compliance
 .RE
 .PP
 API-focused scan:
 .PP
 .RS 4
-reconstrike \-t https://api.example.com \-\-profile api \-\-api\-scan
+reconstrike-ng \-t https://api.example.com \-\-profile api \-\-api\-scan
 .RE
 .PP
 Authenticated scan:
 .PP
 .RS 4
-reconstrike \-t https://example.com \-\-auth\-url https://example.com/login \-u admin \-p secret
+reconstrike-ng \-t https://example.com \-\-auth\-url https://example.com/login \-u admin \-\-password\-file pass.txt
 .RE
 .PP
 With Tor proxy:
 .PP
 .RS 4
-reconstrike \-t https://example.com \-\-tor \-\-anm
+reconstrike-ng \-t https://example.com \-\-tor \-\-anm
 .RE
 .PP
 JSON output for automation:
 .PP
 .RS 4
-reconstrike \-t https://example.com \-\-json \-\-json\-file results.json
+reconstrike-ng \-t https://example.com \-\-json \-\-json\-file results.json
 .RE
 .SH EXIT CODES
 .TP
@@ -266,10 +266,10 @@ High findings detected
 Medium findings detected
 .SH FILES
 .TP
-.I /usr/share/reconstrike/
+.I /usr/share/reconstrike-ng/
 Main application directory
 .TP
-.I /usr/share/reconstrike/scanner/
+.I /usr/share/reconstrike-ng/scanner/
 Scanner modules and core library
 .SH AUTHOR
 CypherSec <cyphersec.404@gmail.com>

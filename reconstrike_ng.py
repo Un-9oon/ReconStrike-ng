@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import signal
 import sys
 import time
 from urllib.parse import urlparse
@@ -42,9 +43,9 @@ BANNER = f"""
 {Fore.RED}██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║{Fore.YELLOW}███████║   ██║   ██║  ██║██║██║  ██╗███████╗
 {Fore.RED}╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝{Fore.YELLOW}╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚══════╝{Style.RESET_ALL}
 {Fore.CYAN}    Advanced Web & Network Vulnerability Assessment Framework v{VERSION}{Style.RESET_ALL}
-{Fore.WHITE}    43 Scan Modules | OWASP Top 10 + PCI DSS | Zero False Positives{Style.RESET_ALL}
+{Fore.WHITE}    43 Scan Modules | OWASP Top 10 + PCI DSS | Verified Findings{Style.RESET_ALL}
 {Fore.WHITE}    WAF Detection | API Security | Compliance Mapping | Scan Diffing{Style.RESET_ALL}
-{Fore.YELLOW}    ────────────────────────────────────────────────────────────────{Style.RESET_ALL}
+{Fore.YELLOW}    ────────────────────────────────────────────────────────────────────{Style.RESET_ALL}
 """
 
 ALL_MODULES = {
@@ -150,7 +151,7 @@ Examples:
   %(prog)s -t https://example.com
   %(prog)s -t https://example.com --profile deep
   %(prog)s -t https://example.com --profile api --json
-  %(prog)s -t https://example.com --auth-url https://example.com/login -u admin -p secret
+  %(prog)s -t https://example.com --auth-url https://example.com/login -u admin --password-file pass.txt
   %(prog)s -t https://example.com --modules sqli,xss,headers
   %(prog)s -t https://example.com --diff --compliance
   %(prog)s -t https://example.com --proxy socks5://127.0.0.1:9050
@@ -183,13 +184,13 @@ Examples:
     parser.add_argument("--no-ssl-verify", action="store_true", default=False, help="Skip SSL certificate verification")
     parser.add_argument("--user-agent", default=f"ReconStrike/{VERSION} (Security Audit)", help="Custom User-Agent")
 
-    # Adaptive Network Masking (ANM) — runtime identity rotation
     anm_group = parser.add_argument_group("Adaptive Network Masking (ANM)",
                                            "Runtime IP/MAC/UA rotation to evade blocking during scans")
     anm_group.add_argument("--anm", action="store_true", help="Enable Adaptive Network Masking (auto-rotate identity on block)")
     anm_group.add_argument("--tor", action="store_true", help="Route traffic through Tor SOCKS5 proxy (127.0.0.1:9050)")
     anm_group.add_argument("--tor-control-port", type=int, default=9051, help="Tor ControlPort for identity renewal (default: 9051)")
-    anm_group.add_argument("--tor-password", default="", help="Tor ControlPort authentication password")
+    anm_group.add_argument("--tor-password", default="", help="Tor ControlPort authentication password (visible in process list; prefer --tor-password-file)")
+    anm_group.add_argument("--tor-password-file", help="Read Tor ControlPort password from file (more secure than --tor-password)")
     anm_group.add_argument("--proxy-pool", help="File with newline-delimited proxy list for round-robin rotation")
     anm_group.add_argument("--rotate-mac", action="store_true", help="Enable MAC address rotation (Linux, requires root)")
     anm_group.add_argument("--rotate-ua", action="store_true", default=False, help="Enable User-Agent fingerprint rotation")
@@ -197,16 +198,16 @@ Examples:
     anm_group.add_argument("--anm-cooldown", type=float, default=3.0, help="Seconds to wait after identity rotation (default: 3)")
     anm_group.add_argument("--anm-max-rotations", type=int, default=50, help="Maximum identity rotations per scan (default: 50)")
 
-    # Internal Network Scanning
     net_group = parser.add_argument_group("Network Scanning", "Internal network port scanning and service detection")
     net_group.add_argument("--network-scan", metavar="TARGET", help="Network scan target (IP, hostname, or CIDR range, e.g. 192.168.1.0/24)")
     net_group.add_argument("--ports", default="top-1000", help="Port specification: top-1000, 1-65535, 22,80,443, or mixed (default: top-1000)")
     net_group.add_argument("--scan-speed", type=int, choices=[1, 2, 3, 4, 5], default=3, help="Scan speed 1-5: 1=stealth, 3=normal, 5=insane (default: 3)")
 
-    # DAST Proxy
     proxy_group = parser.add_argument_group("DAST Proxy", "Interception proxy for passive traffic analysis")
     proxy_group.add_argument("--dast-proxy", action="store_true", help="Start DAST interception proxy for passive analysis")
     proxy_group.add_argument("--proxy-port", type=int, default=8087, help="DAST proxy listen port (default: 8087)")
+    proxy_group.add_argument("--proxy-bind", default="127.0.0.1",
+                             help="DAST proxy bind address (default: 127.0.0.1). Use 0.0.0.0 for network access.")
 
     parser.add_argument("--pdf", help="Generate professional PDF report (e.g., --pdf report.pdf)")
     parser.add_argument("--json", dest="json_output", action="store_true", help="Output results as JSON to stdout")
@@ -236,21 +237,16 @@ Examples:
 def _resolve_modules(args) -> list[str]:
     if args.full:
         profile = SCAN_PROFILES["full"]
-        selected = profile["modules"]
-        depth_override = profile["depth"]
+        selected, depth_override = profile["modules"], profile["depth"]
     elif args.profile:
         profile = SCAN_PROFILES[args.profile]
-        selected = profile["modules"]
-        depth_override = profile["depth"]
+        selected, depth_override = profile["modules"], profile["depth"]
     elif args.deep:
-        selected = list(ALL_MODULES.keys())
-        depth_override = 5
+        selected, depth_override = list(ALL_MODULES.keys()), 5
     elif args.modules:
-        selected = [m.strip() for m in args.modules.split(",")]
-        depth_override = None
+        selected, depth_override = [m.strip() for m in args.modules.split(",")], None
     else:
-        selected = list(ALL_MODULES.keys())
-        depth_override = None
+        selected, depth_override = list(ALL_MODULES.keys()), None
 
     if args.exclude_modules:
         excluded = {m.strip() for m in args.exclude_modules.split(",")}
@@ -266,7 +262,7 @@ def _resolve_modules(args) -> list[str]:
 
 
 def _build_json_output(session: ScanSession, duration: float, diff_data=None, compliance_data=None) -> dict:
-    return {
+    result = {
         "version": VERSION,
         "target": session.config.target,
         "scan_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -284,58 +280,45 @@ def _build_json_output(session: ScanSession, duration: float, diff_data=None, co
         },
         "findings": [
             {
-                "title": f.title,
-                "severity": f.severity.value,
-                "description": f.description,
-                "evidence": f.evidence,
-                "remediation": f.remediation,
-                "url": f.url,
-                "module": f.module,
-                "cwe": f.cwe,
-                "confirmed": f.confirmed,
-                "location": f.location,
-                "parameter": f.parameter,
-                "payload": f.payload,
-                "request_method": f.request_method,
-                "request_body": f.request_body,
-                "response_status": f.response_status,
-                "curl_command": f.curl_command,
-                "reproduction_steps": f.reproduction_steps,
-                "developer_fix": f.developer_fix,
-                "affected_component": f.affected_component,
-                "references": f.references,
-                "detection_method": f.detection_method,
+                "title": f.title, "severity": f.severity.value,
+                "description": f.description, "evidence": f.evidence,
+                "remediation": f.remediation, "url": f.url,
+                "module": f.module, "cwe": f.cwe, "confirmed": f.confirmed,
+                "location": f.location, "parameter": f.parameter,
+                "payload": f.payload, "request_method": f.request_method,
+                "request_body": f.request_body, "response_status": f.response_status,
+                "curl_command": f.curl_command, "reproduction_steps": f.reproduction_steps,
+                "developer_fix": f.developer_fix, "affected_component": f.affected_component,
+                "references": f.references, "detection_method": f.detection_method,
             }
             for f in sorted(session.findings, key=lambda x: x.severity.score, reverse=True)
         ],
-        **({"diff": {
+    }
+    if diff_data:
+        result["diff"] = {
             "new": len(diff_data["new"]),
             "fixed": len(diff_data["fixed"]),
             "persistent": len(diff_data["persistent"]),
             "previous_scan": diff_data["previous_timestamp"],
-        }} if diff_data else {}),
-        **({"compliance": {
+        }
+    if compliance_data:
+        result["compliance"] = {
             "owasp": {k: {"status": v["status"], "findings": v["finding_count"]}
                       for k, v in compliance_data["owasp"].items()},
             "pci_dss": {k: {"status": v["status"], "findings": v["finding_count"]}
                         for k, v in compliance_data["pci_dss"].items()},
-        }} if compliance_data else {}),
-    }
+        }
+    return result
 
 
 def _ci_exit_code(session: ScanSession, threshold: str) -> int:
     severity_rank = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+    exit_codes = {Severity.CRITICAL: 1, Severity.HIGH: 2, Severity.MEDIUM: 3}
     threshold_rank = severity_rank.get(threshold, 2)
-
     for f in session.findings:
-        rank = severity_rank.get(f.severity.value, 0)
-        if rank >= threshold_rank:
-            if f.severity == Severity.CRITICAL:
-                return 1
-            elif f.severity == Severity.HIGH:
-                return 2
-            elif f.severity == Severity.MEDIUM:
-                return 3
+        if severity_rank.get(f.severity.value, 0) >= threshold_rank:
+            if f.severity in exit_codes:
+                return exit_codes[f.severity]
     return 0
 
 
@@ -351,11 +334,10 @@ class ProgressTracker:
         if self.quiet:
             return
         elapsed = time.time() - self.start_time
-        avg_per_module = elapsed / self.current if self.current else 0
-        remaining = avg_per_module * (self.total - self.current)
-        bar_width = 30
-        filled = int(bar_width * self.current / self.total)
-        bar = "█" * filled + "░" * (bar_width - filled)
+        avg = elapsed / self.current if self.current else 0
+        remaining = avg * (self.total - self.current)
+        filled = int(30 * self.current / self.total)
+        bar = "█" * filled + "░" * (30 - filled)
         pct = self.current / self.total * 100
         print(
             f"\r  {Fore.CYAN}[{bar}] {pct:5.1f}% "
@@ -370,15 +352,23 @@ class ProgressTracker:
             print(f"\r  {Fore.GREEN}[{'█' * 30}] 100.0% complete in {elapsed:.1f}s{' ' * 30}{Style.RESET_ALL}")
 
 
+# Global reference for SIGINT cleanup
+_active_session = None
+
+
+def _sigint_handler(signum, frame):
+    """Gracefully shutdown on Ctrl+C, restoring MAC address if rotated."""
+    if _active_session and _active_session.identity_manager:
+        logger.warning("Interrupted -- restoring original identity...")
+        _active_session.identity_manager.shutdown()
+    sys.exit(130)
+
+
 def main():
+    signal.signal(signal.SIGINT, _sigint_handler)
     args = parse_args()
 
-    setup_logging(
-        verbose=args.verbose,
-        quiet=args.quiet,
-        no_color=args.no_color,
-        log_file=args.log_file,
-    )
+    setup_logging(verbose=args.verbose, quiet=args.quiet, no_color=args.no_color, log_file=args.log_file)
 
     if args.no_color:
         colorama_init(strip=True)
@@ -386,8 +376,8 @@ def main():
 
     if args.list_modules:
         print(f"ReconStrike v{VERSION} - Available Scan Modules:\n")
-        for key, (description, _) in ALL_MODULES.items():
-            print(f"  {key:24s} {description}")
+        for key, (desc, _) in ALL_MODULES.items():
+            print(f"  {key:24s} {desc}")
         print(f"\nTotal: {len(ALL_MODULES)} modules")
         sys.exit(0)
 
@@ -396,8 +386,24 @@ def main():
             args.password = f.read().strip()
     elif args.password:
         logger.warning("--password is visible in process list. Use --password-file or set RECONSTRIKE_PASSWORD env var.")
+        for i, arg in enumerate(sys.argv):
+            if arg in ("-p", "--password") and i + 1 < len(sys.argv):
+                sys.argv[i + 1] = "********"
+                break
     elif os.environ.get("RECONSTRIKE_PASSWORD"):
         args.password = os.environ["RECONSTRIKE_PASSWORD"]
+
+    if args.tor_password_file:
+        with open(args.tor_password_file) as f:
+            args.tor_password = f.read().strip()
+    elif args.tor_password:
+        logger.warning("--tor-password is visible in process list. Use --tor-password-file or set RECONSTRIKE_TOR_PASSWORD env var.")
+        for i, arg in enumerate(sys.argv):
+            if arg == "--tor-password" and i + 1 < len(sys.argv):
+                sys.argv[i + 1] = "********"
+                break
+    elif os.environ.get("RECONSTRIKE_TOR_PASSWORD"):
+        args.tor_password = os.environ["RECONSTRIKE_TOR_PASSWORD"]
 
     original_stdout = sys.stdout
     if args.json_output:
@@ -416,16 +422,15 @@ def main():
     if not args.quiet:
         print(BANNER)
 
-    # Start DAST interception proxy if requested
     dast_proxy = None
     if args.dast_proxy:
         try:
             from scanner.proxy.server import ProxyServer
-            dast_proxy = ProxyServer(port=args.proxy_port)
+            dast_proxy = ProxyServer(port=args.proxy_port, bind_addr=args.proxy_bind)
             dast_proxy.start()
             if not args.quiet:
-                logger.info("DAST Proxy started on port %d", args.proxy_port)
-                logger.info("Configure your browser to use http://127.0.0.1:%d as proxy", args.proxy_port)
+                logger.info("DAST Proxy started on %s:%d", args.proxy_bind, args.proxy_port)
+                logger.info("Configure your browser to use http://%s:%d as proxy", args.proxy_bind, args.proxy_port)
                 logger.info("Import CA cert from: %s", dast_proxy.ca_cert)
         except ImportError:
             logger.error("DAST Proxy requires 'cryptography' package: pip install cryptography")
@@ -437,10 +442,11 @@ def main():
     if args.target:
         target = args.target
         if not target.startswith(("http://", "https://")):
-            target = f"http://{target}"
-
-        parsed = urlparse(target)
-        if not parsed.netloc:
+            target = f"https://{target}"
+        if target.startswith("http://"):
+            logger.warning("Target uses HTTP -- scan traffic (including credentials) will be unencrypted. "
+                           "Use https:// if the target supports it.")
+        if not urlparse(target).netloc:
             logger.error("Invalid target URL: %s", target)
             sys.exit(1)
     else:
@@ -463,8 +469,13 @@ def main():
     selected_modules, depth_override = _resolve_modules(args)
     depth = depth_override if depth_override else args.depth
 
-    # Build Adaptive Network Masking config
     anm_enabled = args.anm or args.tor or args.proxy_pool or args.rotate_mac or args.rotate_ua
+    auto_scrape = not args.proxy_pool
+    if auto_scrape and args.auth_url:
+        auto_scrape = False
+        if anm_enabled:
+            logger.warning("ANM: Auto-scraped proxies disabled because authenticated scanning is active. "
+                           "Untrusted proxies could intercept credentials. Use --proxy-pool with trusted proxies instead.")
     anm_cfg = ANMConfig(
         enabled=anm_enabled,
         use_tor=args.tor,
@@ -473,32 +484,27 @@ def main():
         proxy_pool_file=args.proxy_pool or "",
         rotate_mac=args.rotate_mac,
         network_interface=args.anm_interface,
-        rotate_ua=args.rotate_ua or args.anm,  # UA rotation on by default if ANM enabled
+        rotate_ua=args.rotate_ua or args.anm,
         cooldown_after_block=args.anm_cooldown,
         max_rotations_per_scan=args.anm_max_rotations,
+        auto_scrape_proxies=auto_scrape,
     )
 
     config = ScanConfig(
-        target=target,
-        threads=args.threads,
-        timeout=args.timeout,
-        depth=depth,
+        target=target, threads=args.threads, timeout=args.timeout, depth=depth,
         user_agent=args.user_agent,
-        auth_url=args.auth_url or "",
-        auth_username=args.username or "",
+        auth_url=args.auth_url or "", auth_username=args.username or "",
         auth_password=args.password or "",
-        cookies=cookies,
-        headers=custom_headers,
-        verify_ssl=not args.no_ssl_verify,
-        scan_modules=selected_modules,
-        proxy=args.proxy or "",
-        rate_limit=args.rate_limit,
-        scope_include=args.scope_include or "",
-        scope_exclude=args.scope_exclude or "",
+        cookies=cookies, headers=custom_headers,
+        verify_ssl=not args.no_ssl_verify, scan_modules=selected_modules,
+        proxy=args.proxy or "", rate_limit=args.rate_limit,
+        scope_include=args.scope_include or "", scope_exclude=args.scope_exclude or "",
         anm_config=anm_cfg,
     )
 
     session = ScanSession(config)
+    global _active_session
+    _active_session = session
 
     stealth_cfg = None
     if args.stealth:
@@ -508,8 +514,7 @@ def main():
         session._stealth = stealth_cfg
 
     if args.proxy:
-        proxy_dict = {"http": args.proxy, "https": args.proxy}
-        session.session.proxies.update(proxy_dict)
+        session.session.proxies.update({"http": args.proxy, "https": args.proxy})
 
     if not args.quiet:
         profile_name = args.profile or ("deep" if args.deep else "standard")
@@ -523,16 +528,12 @@ def main():
         if args.rate_limit:
             logger.info("Rate Limit : %s req/s", args.rate_limit)
         if anm_enabled:
-            anm_methods = []
-            if args.tor:
-                anm_methods.append("Tor")
-            if args.proxy_pool:
-                anm_methods.append("ProxyPool")
-            if args.rotate_mac:
-                anm_methods.append("MAC")
-            if anm_cfg.rotate_ua:
-                anm_methods.append("UA")
-            logger.info("ANM        : ACTIVE [%s]", ", ".join(anm_methods))
+            methods = []
+            if args.tor: methods.append("Tor")
+            if args.proxy_pool: methods.append("ProxyPool")
+            if args.rotate_mac: methods.append("MAC")
+            if anm_cfg.rotate_ua: methods.append("UA")
+            logger.info("ANM        : ACTIVE [%s]", ", ".join(methods))
         if args.stealth:
             logger.info("Stealth    : ACTIVE [%s profile, %s timing]", stealth_cfg.profile_name, args.stealth_speed)
 
@@ -545,8 +546,6 @@ def main():
 
         if not args.quiet:
             logger.info("Target is reachable (HTTP %s)", resp.status_code)
-
-        if not args.quiet:
             logger.info("Detecting WAF/CDN...")
             waf_list = detect_waf(session)
             if waf_list:
@@ -555,8 +554,7 @@ def main():
                 logger.info("No WAF detected")
 
             logger.info("Analyzing technology stack...")
-            tech_stack = analyze_tech_stack(session)
-            print_tech_stack(tech_stack)
+            print_tech_stack(analyze_tech_stack(session))
 
         if config.auth_url:
             if not args.quiet:
@@ -575,7 +573,6 @@ def main():
             logger.info("=" * 60)
 
         progress = ProgressTracker(len(selected_modules), quiet=args.quiet)
-
         for mod_key in selected_modules:
             if mod_key in ALL_MODULES:
                 name, module = ALL_MODULES[mod_key]
@@ -585,10 +582,9 @@ def main():
                     if args.verbose:
                         logger.debug("Running DAST: %s", name)
                     module.run(session)
-                except Exception as e:
+                except (OSError, ValueError, RuntimeError) as e:
                     logger.error("Module '%s' error: %s", name, e)
                 progress.update(name)
-
         progress.finish()
 
         if args.nikto:
@@ -597,7 +593,7 @@ def main():
                 logger.info("Running Nikto-style misconfiguration scan...")
             try:
                 nikto_run(session)
-            except Exception as e:
+            except (OSError, ValueError, RuntimeError) as e:
                 logger.error("Nikto scan error: %s", e)
 
         if args.api_scan:
@@ -621,8 +617,6 @@ def main():
             logger.info("=" * 60)
 
         ports = parse_port_range(args.ports)
-
-        # Determine if CIDR or single host
         if "/" in args.network_scan:
             results = scan_network(args.network_scan, ports=ports, speed=args.scan_speed)
         else:
@@ -630,31 +624,28 @@ def main():
             results = [result] if result.is_alive else []
 
         if not args.quiet:
-            for host_result in results:
+            for hr in results:
                 logger.info("Host: %s%s — %d open ports (%.1fs)",
-                            host_result.ip,
-                            f" ({host_result.hostname})" if host_result.hostname else "",
-                            len(host_result.open_ports),
-                            host_result.scan_time)
-                for pr in host_result.open_ports:
-                    svc = pr.service or "unknown"
-                    logger.info("  %5d/tcp  %-6s  %s", pr.port, pr.state, svc)
+                            hr.ip,
+                            f" ({hr.hostname})" if hr.hostname else "",
+                            len(hr.open_ports), hr.scan_time)
+                for pr in hr.open_ports:
+                    logger.info("  %5d/tcp  %-6s  %s", pr.port, pr.state, pr.service or "unknown")
 
-        # Add findings for high-risk open services
         HIGH_RISK_PORTS = {21, 23, 445, 1433, 1521, 3306, 3389, 5432, 5900, 6379, 9200, 27017, 2375}
-        for host_result in results:
-            for pr in host_result.open_ports:
+        for hr in results:
+            for pr in hr.open_ports:
                 if pr.port in HIGH_RISK_PORTS:
+                    svc = pr.service or "unknown"
                     session.add_finding(Finding(
-                        title=f"High-Risk Service Exposed: {pr.service or 'unknown'} on port {pr.port}",
+                        title=f"High-Risk Service Exposed: {svc} on port {pr.port}",
                         severity=Severity.HIGH,
-                        description=f"Port {pr.port} ({pr.service or 'unknown'}) is open on {host_result.ip}. "
-                                    f"This service is commonly targeted by attackers.",
-                        evidence=f"Host: {host_result.ip}, Port: {pr.port}/tcp, State: {pr.state}, Service: {pr.service}",
-                        remediation=f"1. Verify this service needs to be exposed\n"
-                                    f"2. Restrict access via firewall rules\n"
-                                    f"3. Ensure the service is patched and hardened",
-                        url=f"tcp://{host_result.ip}:{pr.port}",
+                        description="Port {} ({}) is open on {}. This service is commonly targeted by attackers.".format(pr.port, svc, hr.ip),
+                        evidence="Host: {}, Port: {}/tcp, State: {}, Service: {}".format(hr.ip, pr.port, pr.state, pr.service),
+                        remediation="1. Verify this service needs to be exposed\n"
+                                    "2. Restrict access via firewall rules\n"
+                                    "3. Ensure the service is patched and hardened",
+                        url="tcp://{}:{}".format(hr.ip, pr.port),
                         module="network_scan",
                         confirmed=True,
                         detection_method="TCP connect scan with service identification",
@@ -663,25 +654,19 @@ def main():
         if not results:
             logger.info("Network scan: No alive hosts found.")
 
-    # Collect DAST proxy findings
     if dast_proxy:
-        proxy_findings = dast_proxy.get_findings()
-        for pf in proxy_findings:
+        for pf in dast_proxy.get_findings():
             session.add_finding(Finding(
-                title=pf.title,
-                severity=pf.severity,
-                description=pf.description,
-                evidence=pf.evidence,
-                url=pf.url,
-                module="dast_proxy",
-                remediation=pf.remediation,
-                cwe=pf.cwe,
+                title=pf.title, severity=pf.severity,
+                description=pf.description, evidence=pf.evidence,
+                url=pf.url, module="dast_proxy",
+                remediation=pf.remediation, cwe=pf.cwe,
                 confirmed=True,
                 detection_method="DAST proxy passive traffic analysis",
             ))
         if not args.quiet:
             logger.info("DAST Proxy: %d transactions captured, %d passive findings",
-                        dast_proxy.history.get_count(), len(proxy_findings))
+                        dast_proxy.history.get_count(), len(dast_proxy.get_findings()))
         dast_proxy.stop()
 
     session.end_time = time.time()
@@ -722,7 +707,8 @@ def main():
             original_stdout.flush()
         if args.json_file:
             json_path = _sanitize_path(args.json_file)
-            with open(json_path, "w") as jf:
+            fd = os.open(json_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as jf:
                 json.dump(json_data, jf, indent=2)
             if not args.quiet:
                 logger.info("JSON report saved to: %s", json_path)
@@ -733,27 +719,24 @@ def main():
         logger.info("HTML report saved to: %s", report_path)
 
     if args.pdf:
-        pdf_out = _sanitize_path(args.pdf)
-        pdf_path = generate_pdf_report(session, pdf_out, compliance_data)
+        pdf_path = generate_pdf_report(session, _sanitize_path(args.pdf), compliance_data)
         if not args.quiet:
             logger.info("PDF report saved to: %s", pdf_path)
 
     if not args.quiet:
         logger.info("Scan completed in %.1f seconds", duration)
 
-    # ANM: Clean up (restore original MAC, log rotation summary)
     if session.identity_manager:
-        anm_summary = session.identity_manager.get_summary()
-        if anm_summary["total_rotations"] > 0 and not args.quiet:
-            logger.info("ANM: Total identity rotations: %d", anm_summary["total_rotations"])
-            for entry in anm_summary["history"]:
+        summary = session.identity_manager.get_summary()
+        if summary["total_rotations"] > 0 and not args.quiet:
+            logger.info("ANM: Total identity rotations: %d", summary["total_rotations"])
+            for entry in summary["history"]:
                 logger.info("  ├─ %s | trigger=%s | actions=[%s]",
                             entry["timestamp"], entry["trigger"], ", ".join(entry["actions"]))
         session.identity_manager.shutdown()
 
     if args.ci:
-        code = _ci_exit_code(session, args.severity_threshold)
-        sys.exit(code)
+        sys.exit(_ci_exit_code(session, args.severity_threshold))
 
 
 if __name__ == "__main__":

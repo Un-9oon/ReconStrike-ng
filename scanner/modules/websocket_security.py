@@ -42,20 +42,18 @@ EVIL_ORIGINS = [
 
 
 def _build_curl_ws(url, extra_headers=None):
-    """Build a curl command for WebSocket upgrade request."""
-    cmd = f"curl -k -i '{url}'"
     all_headers = dict(WS_UPGRADE_HEADERS)
     if extra_headers:
         all_headers.update(extra_headers)
+    cmd = "curl -k -i '{}'".format(url)
     for k, v in all_headers.items():
-        cmd += f" -H '{k}: {v}'"
+        cmd += " -H '{}: {}'".format(k, v)
     return cmd
 
 
 def _detect_ws_endpoints(session, base_url):
-    """Discover WebSocket endpoints by probing common paths."""
     parsed = urlparse(base_url)
-    base = f"{parsed.scheme}://{parsed.netloc}"
+    base = "{}://{}".format(parsed.scheme, parsed.netloc)
     endpoints = []
 
     for path in COMMON_WS_PATHS:
@@ -65,47 +63,40 @@ def _detect_ws_endpoints(session, base_url):
             if not resp:
                 continue
 
-            # WebSocket upgrade accepted
             if resp.status_code == 101:
                 endpoints.append({"url": url, "status": 101, "type": "upgrade_accepted"})
                 continue
 
-            # Socket.IO polling endpoint responds with JSON
             if "socket.io" in path and resp.status_code == 200:
                 if "sid" in resp.text or "websocket" in resp.text.lower():
                     endpoints.append({"url": url, "status": 200, "type": "socketio_polling"})
                     continue
 
-            # SignalR negotiate endpoint
             if "signalr" in path and resp.status_code == 200:
                 if "connectionId" in resp.text or "negotiateVersion" in resp.text:
                     endpoints.append({"url": url, "status": 200, "type": "signalr"})
                     continue
 
-            # SockJS info endpoint
             if "sockjs" in path and resp.status_code == 200:
                 if "websocket" in resp.text.lower():
                     endpoints.append({"url": url, "status": 200, "type": "sockjs"})
                     continue
 
-            # Server returned 400 with WebSocket-related message (knows about WS)
             if resp.status_code == 400:
                 body_lower = resp.text.lower()
                 if any(kw in body_lower for kw in ("websocket", "upgrade", "sec-websocket")):
                     endpoints.append({"url": url, "status": 400, "type": "ws_aware"})
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.debug("websocket_security _detect_ws_endpoints: operation failed: %s", e)
             continue
 
-    # Also check crawled URLs for WebSocket indicators
+    # check crawled URLs for WS indicators
     for url in session.crawled_urls:
         try:
             resp = session.get(url)
             if not resp:
                 continue
-            body = resp.text
-            # Look for WebSocket connection code in HTML/JS
             ws_patterns = [
                 r'new\s+WebSocket\s*\(\s*["\']([^"\']+)',
                 r'io\(\s*["\']([^"\']+)',
@@ -113,8 +104,7 @@ def _detect_ws_endpoints(session, base_url):
                 r'SockJS\s*\(\s*["\']([^"\']+)',
             ]
             for pattern in ws_patterns:
-                matches = re.findall(pattern, body)
-                for match in matches:
+                for match in re.findall(pattern, resp.text):
                     if match.startswith("ws://") or match.startswith("wss://"):
                         http_url = match.replace("ws://", "http://").replace("wss://", "https://")
                     elif match.startswith("/"):
@@ -127,11 +117,10 @@ def _detect_ws_endpoints(session, base_url):
                         "type": "js_reference",
                         "source": url,
                     })
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.debug("websocket_security _detect_ws_endpoints: operation failed: %s", e)
             continue
 
-    # Deduplicate by URL
     seen = set()
     unique = []
     for ep in endpoints:
@@ -142,12 +131,10 @@ def _detect_ws_endpoints(session, base_url):
 
 
 def _test_origin_validation(session, endpoint):
-    """Test if the WebSocket endpoint validates the Origin header."""
     url = endpoint["url"]
     parsed = urlparse(url)
-    legitimate_origin = f"{parsed.scheme}://{parsed.netloc}"
+    legitimate_origin = "{}://{}".format(parsed.scheme, parsed.netloc)
 
-    # First test with legitimate origin
     legit_headers = dict(WS_UPGRADE_HEADERS)
     legit_headers["Origin"] = legitimate_origin
     legit_resp = session.get(url, headers=legit_headers)
@@ -164,21 +151,17 @@ def _test_origin_validation(session, endpoint):
             if not resp:
                 continue
 
-            # If the server accepts the upgrade or returns the same status with
-            # an evil origin as with the legitimate one, origin is not validated
             origin_accepted = False
 
             if resp.status_code == 101:
                 origin_accepted = True
             elif resp.status_code == legit_resp.status_code:
-                # Same response status -- check if Access-Control headers differ
                 legit_acao = legit_resp.headers.get("Access-Control-Allow-Origin", "")
                 evil_acao = resp.headers.get("Access-Control-Allow-Origin", "")
 
                 if evil_acao == "*" or evil_acao == evil_origin:
                     origin_accepted = True
                 elif resp.status_code == 200 and legit_resp.status_code == 200:
-                    # Both return 200 with similar body -- likely no origin check
                     if abs(len(resp.text) - len(legit_resp.text)) < 50:
                         origin_accepted = True
 
@@ -188,21 +171,23 @@ def _test_origin_validation(session, endpoint):
                     title="Cross-Site WebSocket Hijacking (Missing Origin Validation)",
                     severity=Severity.HIGH,
                     description=(
-                        f"The WebSocket endpoint at '{url}' does not validate the Origin header. "
-                        f"When a request is sent with Origin '{evil_origin}', the server responds "
-                        f"identically to a legitimate origin request. This enables Cross-Site "
-                        f"WebSocket Hijacking (CSWSH), where a malicious webpage can establish a "
-                        f"WebSocket connection to this endpoint using the victim's cookies."
-                    ),
+                        "The WebSocket endpoint at '{}' does not validate the Origin header. "
+                        "When a request is sent with Origin '{}', the server responds "
+                        "identically to a legitimate origin request. This enables Cross-Site "
+                        "WebSocket Hijacking (CSWSH), where a malicious webpage can establish a "
+                        "WebSocket connection to this endpoint using the victim's cookies."
+                    ).format(url, evil_origin),
                     evidence=(
-                        f"WebSocket Endpoint: {url}\n"
-                        f"Endpoint Type: {endpoint['type']}\n"
-                        f"Legitimate Origin: {legitimate_origin}\n"
-                        f"Evil Origin: {evil_origin}\n"
-                        f"Legitimate Origin Status: {legit_resp.status_code}\n"
-                        f"Evil Origin Status: {resp.status_code}\n"
-                        f"ACAO Header (evil): {resp.headers.get('Access-Control-Allow-Origin', 'none')}"
-                    ),
+                        "WebSocket Endpoint: {}\n"
+                        "Endpoint Type: {}\n"
+                        "Legitimate Origin: {}\n"
+                        "Evil Origin: {}\n"
+                        "Legitimate Origin Status: {}\n"
+                        "Evil Origin Status: {}\n"
+                        "ACAO Header (evil): {}"
+                    ).format(url, endpoint['type'], legitimate_origin, evil_origin,
+                             legit_resp.status_code, resp.status_code,
+                             resp.headers.get('Access-Control-Allow-Origin', 'none')),
                     remediation=(
                         "1. Validate the Origin header on all WebSocket upgrade requests.\n"
                         "2. Maintain an allowlist of permitted origins and reject all others.\n"
@@ -214,7 +199,7 @@ def _test_origin_validation(session, endpoint):
                     module="websocket",
                     cwe="CWE-1385",
                     confirmed=True,
-                    location=f"WebSocket endpoint at {parsed.path or '/'}",
+                    location="WebSocket endpoint at {}".format(parsed.path or '/'),
                     parameter="Origin",
                     payload=evil_origin,
                     request_method="GET",
@@ -222,65 +207,58 @@ def _test_origin_validation(session, endpoint):
                     response_status=resp.status_code,
                     curl_command=curl_cmd,
                     reproduction_steps=(
-                        f"1. Open a browser console on https://evil.com (or any cross-origin page).\n"
-                        f"2. Run: var ws = new WebSocket('{url.replace('http', 'ws')}');\n"
-                        f"3. If the connection opens, the endpoint lacks origin validation.\n"
-                        f"4. Alternatively, run: {curl_cmd}\n"
-                        f"5. Compare response with the same request using Origin: {legitimate_origin}"
-                    ),
+                        "1. Open a browser console on https://evil.com (or any cross-origin page).\n"
+                        "2. Run: var ws = new WebSocket('{}');\n"
+                        "3. If the connection opens, the endpoint lacks origin validation.\n"
+                        "4. Alternatively, run: {}\n"
+                        "5. Compare response with the same request using Origin: {}"
+                    ).format(url.replace('http', 'ws'), curl_cmd, legitimate_origin),
                     developer_fix=(
-                        f"Server-side WebSocket handler for {parsed.path}:\n\n"
+                        "Server-side WebSocket handler for {}:\n\n"
                         "Check the Origin header before accepting the upgrade:\n\n"
                         "  Node.js (ws library):\n"
-                        "    wss.on('connection', (ws, req) => {\n"
+                        "    wss.on('connection', (ws, req) => {{\n"
                         "      const origin = req.headers.origin;\n"
-                        f"      if (origin !== '{legitimate_origin}') {{\n"
+                        "      if (origin !== '{}') {{\n"
                         "        ws.close(1008, 'Invalid origin');\n"
                         "        return;\n"
-                        "      }\n"
-                        "    });\n\n"
+                        "      }}\n"
+                        "    }});\n\n"
                         "  Python (Django Channels):\n"
                         "    ALLOWED_HOSTS = ['yourdomain.com']\n"
                         "    # Django Channels checks Origin automatically with ALLOWED_HOSTS"
-                    ),
-                    affected_component=f"WebSocket origin validation at {parsed.path}",
+                    ).format(parsed.path, legitimate_origin),
+                    affected_component="WebSocket origin validation at {}".format(parsed.path),
                     references=(
                         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/10-Testing_WebSockets | "
                         "https://portswigger.net/web-security/websockets/cross-site-websocket-hijacking"
                     ),
                     detection_method=(
-                        f"Sent WebSocket upgrade requests with both a legitimate origin "
-                        f"({legitimate_origin}) and a malicious origin ({evil_origin}). "
-                        f"Both received identical responses, indicating no origin validation."
-                    ),
+                        "Sent WebSocket upgrade requests with both a legitimate origin "
+                        "({}) and a malicious origin ({}). "
+                        "Both received identical responses, indicating no origin validation."
+                    ).format(legitimate_origin, evil_origin),
                 ))
                 return
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.debug("websocket_security _test_origin_validation: operation failed: %s", e)
             continue
 
 
 def _test_ws_no_auth(session, endpoint):
-    """Test if the WebSocket endpoint requires authentication."""
     url = endpoint["url"]
     parsed = urlparse(url)
 
     try:
-        # Send upgrade request without any auth cookies/tokens
         no_auth_headers = dict(WS_UPGRADE_HEADERS)
         resp = session.get(url, headers=no_auth_headers)
         if not resp:
             return
 
-        # Check if the endpoint accepts connections without auth
         if resp.status_code in (101, 200):
-            # Verify this isn't just a public endpoint by checking
-            # if the response contains meaningful data or upgrade confirmation
             is_upgrade = resp.status_code == 101
             has_ws_accept = "Sec-WebSocket-Accept" in resp.headers
-
-            # For polling endpoints (socket.io), check if we get a session
             is_session = "sid" in resp.text if resp.text else False
 
             if is_upgrade or has_ws_accept or is_session:
@@ -289,20 +267,21 @@ def _test_ws_no_auth(session, endpoint):
                     title="WebSocket Endpoint Accessible Without Authentication",
                     severity=Severity.MEDIUM,
                     description=(
-                        f"The WebSocket endpoint at '{url}' accepts connections without requiring "
-                        f"authentication. An unauthenticated attacker can establish a WebSocket "
-                        f"connection and potentially access real-time data, send commands, or "
-                        f"interact with backend services."
-                    ),
+                        "The WebSocket endpoint at '{}' accepts connections without requiring "
+                        "authentication. An unauthenticated attacker can establish a WebSocket "
+                        "connection and potentially access real-time data, send commands, or "
+                        "interact with backend services."
+                    ).format(url),
                     evidence=(
-                        f"WebSocket Endpoint: {url}\n"
-                        f"Endpoint Type: {endpoint['type']}\n"
-                        f"Response Status: {resp.status_code}\n"
-                        f"Upgrade Accepted: {is_upgrade}\n"
-                        f"WS Accept Header: {has_ws_accept}\n"
-                        f"Session Issued: {is_session}\n"
-                        f"Response Headers: {dict(resp.headers)}"
-                    ),
+                        "WebSocket Endpoint: {}\n"
+                        "Endpoint Type: {}\n"
+                        "Response Status: {}\n"
+                        "Upgrade Accepted: {}\n"
+                        "WS Accept Header: {}\n"
+                        "Session Issued: {}\n"
+                        "Response Headers: {}"
+                    ).format(url, endpoint['type'], resp.status_code,
+                             is_upgrade, has_ws_accept, is_session, dict(resp.headers)),
                     remediation=(
                         "1. Require authentication before accepting WebSocket upgrades.\n"
                         "2. Validate session tokens or JWTs during the handshake.\n"
@@ -314,67 +293,66 @@ def _test_ws_no_auth(session, endpoint):
                     module="websocket",
                     cwe="CWE-1385",
                     confirmed=False,
-                    location=f"WebSocket endpoint at {parsed.path or '/'}",
+                    location="WebSocket endpoint at {}".format(parsed.path or '/'),
                     request_method="GET",
                     request_headers=str(no_auth_headers),
                     response_status=resp.status_code,
                     curl_command=curl_cmd,
                     reproduction_steps=(
-                        f"1. Send a WebSocket upgrade request to {url} without any cookies or tokens.\n"
-                        f"2. Observe if the server accepts the upgrade (101) or issues a session.\n"
-                        f"3. Run: {curl_cmd}\n"
-                        f"4. If accepted, try sending messages to enumerate functionality."
-                    ),
+                        "1. Send a WebSocket upgrade request to {} without any cookies or tokens.\n"
+                        "2. Observe if the server accepts the upgrade (101) or issues a session.\n"
+                        "3. Run: {}\n"
+                        "4. If accepted, try sending messages to enumerate functionality."
+                    ).format(url, curl_cmd),
                     developer_fix=(
-                        f"WebSocket handler for {parsed.path}:\n\n"
+                        "WebSocket handler for {}:\n\n"
                         "Authenticate during the upgrade handshake:\n\n"
                         "  Node.js (ws library):\n"
-                        "    wss.on('upgrade', (req, socket, head) => {\n"
+                        "    wss.on('upgrade', (req, socket, head) => {{\n"
                         "      const token = parseToken(req);\n"
-                        "      if (!verifyToken(token)) {\n"
+                        "      if (!verifyToken(token)) {{\n"
                         "        socket.write('HTTP/1.1 401 Unauthorized\\r\\n\\r\\n');\n"
                         "        socket.destroy();\n"
                         "        return;\n"
-                        "      }\n"
-                        "      wss.handleUpgrade(req, socket, head, (ws) => {\n"
+                        "      }}\n"
+                        "      wss.handleUpgrade(req, socket, head, (ws) => {{\n"
                         "        wss.emit('connection', ws, req);\n"
-                        "      });\n"
-                        "    });"
-                    ),
-                    affected_component=f"WebSocket authentication at {parsed.path}",
+                        "      }});\n"
+                        "    }});"
+                    ).format(parsed.path),
+                    affected_component="WebSocket authentication at {}".format(parsed.path),
                     references=(
                         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/10-Testing_WebSockets"
                     ),
                     detection_method=(
-                        f"Sent a WebSocket upgrade request without authentication credentials "
-                        f"and received a successful response (status {resp.status_code}), "
-                        f"indicating the endpoint does not require authentication."
-                    ),
+                        "Sent a WebSocket upgrade request without authentication credentials "
+                        "and received a successful response (status {}), "
+                        "indicating the endpoint does not require authentication."
+                    ).format(resp.status_code),
                 ))
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.debug("websocket_security _test_ws_no_auth: connection failed: %s", e)
 
 
 def _report_ws_endpoints(session, endpoints):
-    """Report discovered WebSocket endpoints as informational findings."""
     if not endpoints:
         return
 
     parsed = urlparse(endpoints[0]["url"])
     ep_list = "\n".join(
-        f"  - {ep['url']} (type: {ep['type']}, status: {ep['status']})"
+        "  - {} (type: {}, status: {})".format(ep['url'], ep['type'], ep['status'])
         for ep in endpoints
     )
 
     session.add_finding(Finding(
-        title=f"WebSocket Endpoints Discovered ({len(endpoints)} found)",
+        title="WebSocket Endpoints Discovered ({} found)".format(len(endpoints)),
         severity=Severity.INFO,
         description=(
-            f"Discovered {len(endpoints)} WebSocket endpoint(s) on {parsed.netloc}. "
-            f"WebSocket endpoints should be tested for authentication, authorization, "
-            f"origin validation, and input validation vulnerabilities."
-        ),
-        evidence=f"Discovered WebSocket endpoints:\n{ep_list}",
+            "Discovered {} WebSocket endpoint(s) on {}. "
+            "WebSocket endpoints should be tested for authentication, authorization, "
+            "origin validation, and input validation vulnerabilities."
+        ).format(len(endpoints), parsed.netloc),
+        evidence="Discovered WebSocket endpoints:\n{}".format(ep_list),
         remediation=(
             "1. Ensure all WebSocket endpoints require authentication.\n"
             "2. Validate the Origin header to prevent CSWSH.\n"
@@ -386,7 +364,7 @@ def _report_ws_endpoints(session, endpoints):
         module="websocket",
         cwe="CWE-1385",
         confirmed=True,
-        location=f"WebSocket endpoints on {parsed.netloc}",
+        location="WebSocket endpoints on {}".format(parsed.netloc),
         request_method="GET",
         detection_method=(
             "Probed common WebSocket paths and analyzed crawled pages for WebSocket "
@@ -396,12 +374,11 @@ def _report_ws_endpoints(session, endpoints):
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing WebSocket Security...")
+    logger.info("\n[*] Testing WebSocket Security...")
 
     if not session.crawled_urls:
         return
 
-    # Use first crawled URL as base
     base_url = next(iter(session.crawled_urls))
     endpoints = _detect_ws_endpoints(session, base_url)
 

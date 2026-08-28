@@ -2,6 +2,8 @@ import json
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+import requests
+
 from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
@@ -48,6 +50,13 @@ WHERE_PAYLOADS = [
 ]
 
 
+def _try_json(v):
+    try:
+        return json.loads(v)
+    except (json.JSONDecodeError, TypeError):
+        return v
+
+
 def _build_curl(method, url, data=None, content_type=None):
     cmd = f"curl -k -X {method} '{url}'"
     if content_type:
@@ -71,12 +80,10 @@ def _response_differs(baseline_resp, test_resp):
         return False
     if baseline_resp.status_code != test_resp.status_code:
         return True
-    baseline_len = len(baseline_resp.text)
-    test_len = len(test_resp.text)
-    if baseline_len == 0:
-        return test_len > 0
-    ratio = abs(test_len - baseline_len) / max(baseline_len, 1)
-    return ratio > 0.15
+    bl, tl = len(baseline_resp.text), len(test_resp.text)
+    if bl == 0:
+        return tl > 0
+    return abs(tl - bl) / max(bl, 1) > 0.15
 
 
 def _check_nosql_errors(body):
@@ -106,7 +113,6 @@ def _test_url_params(session, url):
         baseline_resp = _get_baseline(session, url, param, original)
         baseline_text = baseline_resp.text if baseline_resp else ""
 
-        # Test query string operator payloads: param[$ne]=1
         for suffix, description in QUERY_STRING_PAYLOADS:
             test_query = parsed.query + f"&{param}{suffix}"
             test_url = urlunparse(parsed._replace(query=test_query))
@@ -180,7 +186,6 @@ def _test_url_params(session, url):
                 ))
                 return
 
-            # Check for auth bypass / data leakage via response difference
             if _response_differs(baseline_resp, resp):
                 if resp.status_code == 200 and len(resp.text) > len(baseline_text) * 1.3:
                     curl_cmd = _build_curl("GET", test_url)
@@ -317,16 +322,9 @@ def _test_forms(session, form):
     inputs = form.get("inputs", [])
     source_url = form.get("source_url", action)
 
-    baseline_data = {}
-    for inp in inputs:
-        name = inp.get("name")
-        if name:
-            baseline_data[name] = inp.get("value", "test")
+    baseline_data = {inp["name"]: inp.get("value", "test") for inp in inputs if inp.get("name")}
 
-    if method == "post":
-        baseline_resp = session.post(action, data=baseline_data)
-    else:
-        baseline_resp = session.get(action, params=baseline_data)
+    baseline_resp = session.post(action, data=baseline_data) if method == "post" else session.get(action, params=baseline_data)
 
     baseline_text = baseline_resp.text if baseline_resp else ""
 
@@ -335,22 +333,15 @@ def _test_forms(session, form):
         if not name:
             continue
 
-        # Test JSON operator injection in form fields
         for payload, description in OPERATOR_PAYLOADS:
             test_data = dict(baseline_data)
             test_data[name] = payload
 
             if method == "post":
-                # Try as JSON body
                 try:
-                    json_body = {}
-                    for k, v in test_data.items():
-                        try:
-                            json_body[k] = json.loads(v)
-                        except (json.JSONDecodeError, TypeError):
-                            json_body[k] = v
+                    json_body = {k: _try_json(v) for k, v in test_data.items()}
                     resp = session.post(action, json=json_body)
-                except Exception as e:
+                except (requests.RequestException, ValueError) as e:
                     logger.debug("nosql_injection: JSON POST failed, falling back to form POST: %s", e)
                     resp = session.post(action, data=test_data)
             else:
@@ -426,7 +417,6 @@ def _test_forms(session, form):
                 ))
                 return
 
-            # Check for auth bypass via response difference
             if _response_differs(baseline_resp, resp):
                 if resp.status_code == 200 and len(resp.text) > len(baseline_text) * 1.3:
                     data_str = json.dumps(test_data)
@@ -490,7 +480,7 @@ def _test_forms(session, form):
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for NoSQL Injection...")
+    logger.info("\n[*] Testing for NoSQL Injection...")
 
     for url in session.crawled_urls:
         _test_url_params(session, url)

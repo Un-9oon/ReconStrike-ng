@@ -13,7 +13,7 @@ with open("scanner/__init__.py") as f:
         version = "0.0.0"
 
 setup(
-    name="reconstrike",
+    name="reconstrike-ng",
     version=version,
     description="Advanced Web & Network Vulnerability Assessment Framework",
     long_description=open("README.md").read(),
@@ -22,7 +22,7 @@ setup(
     author_email="cyphersec.404@gmail.com",
     url="https://github.com/Un-9oon/ReconStrike-ng",
     packages=find_packages(),
-    py_modules=["reconstrike"],
+    py_modules=["reconstrike_ng"],
     python_requires=">=3.10",
     install_requires=[
         "requests[socks]>=2.31.0",
@@ -34,7 +34,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "reconstrike=reconstrike:main",
+            "reconstrike-ng=reconstrike_ng:main",
         ],
     },
     classifiers=[

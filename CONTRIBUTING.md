@@ -111,8 +111,8 @@ After creating the module file:
 Run before committing:
 
 ```bash
-black --line-length 120 scanner/ tests/ reconstrike.py
-flake8 --max-line-length 120 scanner/ tests/ reconstrike.py
+black --line-length 120 scanner/ tests/ reconstrike_ng.py
+flake8 --max-line-length 120 scanner/ tests/ reconstrike_ng.py
 ```
 
 ## Testing

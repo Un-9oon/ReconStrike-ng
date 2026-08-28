@@ -2,7 +2,11 @@ import re
 from urllib.parse import urljoin, urlparse, parse_qs
 
 from bs4 import BeautifulSoup
-from colorama import Fore, Style
+
+from scanner.log import logger
+
+SKIP_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".css",
+            ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3", ".pdf")
 
 
 def extract_forms(html: str, base_url: str) -> list[dict]:
@@ -11,21 +15,17 @@ def extract_forms(html: str, base_url: str) -> list[dict]:
     for form in soup.find_all("form"):
         action = form.get("action", "")
         action = urljoin(base_url, action) if action else base_url
-        method = form.get("method", "get").lower()
         inputs = []
         for tag in form.find_all(["input", "textarea", "select"]):
-            input_info = {
-                "name": tag.get("name", ""),
-                "type": tag.get("type", "text"),
-                "value": tag.get("value", ""),
-            }
+            info = {"name": tag.get("name", ""), "type": tag.get("type", "text"),
+                    "value": tag.get("value", "")}
             if tag.name == "select":
-                input_info["type"] = "select"
-                options = tag.find_all("option")
-                if options:
-                    input_info["value"] = options[0].get("value", "")
-            inputs.append(input_info)
-        forms.append({"action": action, "method": method, "inputs": inputs})
+                info["type"] = "select"
+                opts = tag.find_all("option")
+                if opts:
+                    info["value"] = opts[0].get("value", "")
+            inputs.append(info)
+        forms.append({"action": action, "method": form.get("method", "get").lower(), "inputs": inputs})
     return forms
 
 
@@ -42,9 +42,9 @@ def extract_links(html: str, base_url: str, scope_domain: str) -> set[str]:
             continue
         if parsed.netloc and parsed.netloc != scope_domain:
             continue
-        clean = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        clean = "{}://{}{}".format(parsed.scheme, parsed.netloc, parsed.path)
         if parsed.query:
-            clean += f"?{parsed.query}"
+            clean += "?" + parsed.query
         links.add(clean)
     return links
 
@@ -76,12 +76,9 @@ class Crawler:
         self.scope_domain = urlparse(self.config.target).netloc
 
     def crawl(self) -> None:
-        print(f"\n{Fore.CYAN}[*] Starting crawler on {self.config.target}{Style.RESET_ALL}")
+        logger.info("Starting crawler on %s", self.config.target)
         self._crawl_url(self.config.target, depth=0)
-        print(
-            f"{Fore.GREEN}[+] Crawling complete: {len(self.session.crawled_urls)} URLs, "
-            f"{len(self.session.forms)} forms{Style.RESET_ALL}"
-        )
+        logger.info("Crawling complete: %d URLs, %d forms", len(self.session.crawled_urls), len(self.session.forms))
 
     def _crawl_url(self, url: str, depth: int) -> None:
         if depth > self.config.depth:
@@ -101,28 +98,20 @@ class Crawler:
             return
 
         html = resp.text
-        forms = extract_forms(html, url)
-        for form in forms:
+        for form in extract_forms(html, url):
             form["source_url"] = url
             self.session.forms.append(form)
 
-        links = extract_links(html, url, self.scope_domain)
-        js_urls = extract_js_urls(html, url)
-        all_urls = links | js_urls
-
-        for link in all_urls:
+        for link in extract_links(html, url, self.scope_domain) | extract_js_urls(html, url):
             parsed = urlparse(link)
             if parsed.netloc != self.scope_domain:
                 continue
-            skip_ext = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".css",
-                        ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3", ".pdf")
-            if any(parsed.path.lower().endswith(ext) for ext in skip_ext):
+            if any(parsed.path.lower().endswith(ext) for ext in SKIP_EXT):
                 self.session.crawled_urls.add(link)
                 continue
             self._crawl_url(link, depth + 1)
 
     def _normalize(self, url: str) -> str:
         parsed = urlparse(url)
-        params = parse_qs(parsed.query)
-        normalized_params = "&".join(f"{k}=" for k in sorted(params.keys()))
-        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{normalized_params}"
+        params = "&".join("{}=".format(k) for k in sorted(parse_qs(parsed.query).keys()))
+        return "{}://{}{}?{}".format(parsed.scheme, parsed.netloc, parsed.path, params)

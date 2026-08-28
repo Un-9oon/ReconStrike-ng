@@ -2,10 +2,11 @@ import re
 from urllib.parse import urljoin
 
 from scanner.core import Finding, Severity, ScanSession
+from scanner.log import logger
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Checking for security misconfigurations...")
+    logger.info("\n[*] Checking for security misconfigurations...")
     _check_methods(session)
     _check_clickjacking(session)
     _check_open_redirect(session)
@@ -87,9 +88,8 @@ def _check_clickjacking(session: ScanSession):
 
     xfo = resp.headers.get("X-Frame-Options", "").lower()
     csp = resp.headers.get("Content-Security-Policy", "")
-    has_frame_ancestors = "frame-ancestors" in csp.lower()
 
-    if not xfo and not has_frame_ancestors:
+    if not xfo and "frame-ancestors" not in csp.lower():
         if "text/html" in resp.headers.get("Content-Type", ""):
             curl_cmd = f"curl -kI '{session.config.target}'"
             session.add_finding(Finding(
@@ -211,10 +211,7 @@ def _check_host_header_injection(session: ScanSession):
         if not security_contexts:
             return
 
-        reset_patterns = ["reset", "password", "verify", "confirm", "activate", "token"]
-        in_sensitive_context = any(p in resp.text.lower() for p in reset_patterns)
-
-        if in_sensitive_context:
+        if any(p in resp.text.lower() for p in ("reset", "password", "verify", "confirm", "activate", "token")):
             curl_cmd = f"curl -k -H 'Host: {evil_host}' '{session.config.target}'"
             session.add_finding(Finding(
                 title="Host Header Injection in Sensitive Context",

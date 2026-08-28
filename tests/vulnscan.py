@@ -2,7 +2,7 @@
 """
 Backwards-compatibility alias for ReconStrike.
 """
-from reconstrike import main
+from reconstrike_ng import main
 
 if __name__ == "__main__":
     main()

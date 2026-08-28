@@ -10,9 +10,9 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def run_cli(*args, timeout=10):
-    """Run reconstrike.py with given arguments and return the completed process."""
+    """Run reconstrike_ng.py with given arguments and return the completed process."""
     return subprocess.run(
-        [sys.executable, "reconstrike.py", *args],
+        [sys.executable, "reconstrike_ng.py", *args],
         capture_output=True,
         text=True,
         timeout=timeout,

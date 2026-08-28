@@ -1,4 +1,5 @@
 from scanner.core import ScanSession, Severity, Finding
+from scanner.log import logger
 
 OWASP_TOP_10 = {
     "A01:2021 Broken Access Control": {
@@ -33,14 +34,8 @@ OWASP_TOP_10 = {
         "modules": ["jwt", "csrf"],
         "cwes": ["CWE-345", "CWE-352"],
     },
-    "A09:2021 Logging & Monitoring": {
-        "modules": [],
-        "cwes": [],
-    },
-    "A10:2021 SSRF": {
-        "modules": ["ssrf"],
-        "cwes": ["CWE-918"],
-    },
+    "A09:2021 Logging & Monitoring": {"modules": [], "cwes": []},
+    "A10:2021 SSRF": {"modules": ["ssrf"], "cwes": ["CWE-918"]},
 }
 
 PCI_DSS_CHECKS = {
@@ -60,15 +55,9 @@ def generate_compliance_report(session: ScanSession) -> dict:
     report = {"owasp": {}, "pci_dss": {}}
 
     for category, info in OWASP_TOP_10.items():
-        findings = [
-            f for f in session.findings
-            if f.module in info["modules"] or f.cwe in info["cwes"]
-        ]
-        max_sev = None
-        for f in findings:
-            if max_sev is None or f.severity.score > max_sev.score:
-                max_sev = f.severity
-
+        findings = [f for f in session.findings
+                    if f.module in info["modules"] or f.cwe in info["cwes"]]
+        max_sev = max((f.severity for f in findings), key=lambda s: s.score, default=None)
         report["owasp"][category] = {
             "status": "FAIL" if findings else "PASS",
             "finding_count": len(findings),
@@ -88,40 +77,33 @@ def generate_compliance_report(session: ScanSession) -> dict:
 
 
 def print_compliance_summary(report: dict):
-    from colorama import Fore, Style
-
-    print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}  OWASP TOP 10 (2021) COMPLIANCE{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+    logger.info("=" * 60)
+    logger.info("OWASP TOP 10 (2021) COMPLIANCE")
+    logger.info("=" * 60)
 
     passed = 0
     for category, data in report["owasp"].items():
         if data["status"] == "PASS":
             passed += 1
-            print(f"  {Fore.GREEN}PASS{Style.RESET_ALL}  {category}")
+            logger.info("  PASS  %s", category)
         else:
-            sev = data["max_severity"]
-            count = data["finding_count"]
-            print(f"  {Fore.RED}FAIL{Style.RESET_ALL}  {category} ({count} findings, max: {sev})")
+            logger.info("  FAIL  %s (%d findings, max: %s)", category, data["finding_count"], data["max_severity"])
 
-    total = len(report["owasp"])
-    print(f"\n  Score: {passed}/{total} categories passing")
+    logger.info("Score: %d/%d categories passing", passed, len(report["owasp"]))
 
-    print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}  PCI DSS v4.0 RELEVANT CHECKS{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+    logger.info("=" * 60)
+    logger.info("PCI DSS v4.0 RELEVANT CHECKS")
+    logger.info("=" * 60)
 
     pci_passed = 0
     for req, data in report["pci_dss"].items():
         if data["status"] == "PASS":
             pci_passed += 1
-            print(f"  {Fore.GREEN}PASS{Style.RESET_ALL}  {req}")
+            logger.info("  PASS  %s", req)
         else:
-            count = data["finding_count"]
-            print(f"  {Fore.RED}FAIL{Style.RESET_ALL}  {req} ({count} findings)")
+            logger.info("  FAIL  %s (%d findings)", req, data["finding_count"])
 
-    pci_total = len(report["pci_dss"])
-    print(f"\n  Score: {pci_passed}/{pci_total} requirements passing")
+    logger.info("Score: %d/%d requirements passing", pci_passed, len(report["pci_dss"]))
 
 
 def generate_compliance_html(report: dict, target: str) -> str:
@@ -137,49 +119,58 @@ def generate_compliance_html(report: dict, target: str) -> str:
         sev_html = ""
         if data["max_severity"]:
             sev_color = severity_colors.get(data["max_severity"], "#6b7280")
-            sev_html = f'<span style="color:{sev_color};font-weight:600;">{data["max_severity"]}</span>'
-        owasp_rows += f"""
+            sev_html = '<span style="color:{};font-weight:600;">{}</span>'.format(sev_color, data["max_severity"])
+        owasp_rows += """
         <tr>
-            <td style="color:{status_color};font-weight:700;">{data['status']}</td>
-            <td>{html_mod.escape(category)}</td>
-            <td>{data['finding_count']}</td>
-            <td>{sev_html}</td>
-        </tr>"""
+            <td style="color:{};font-weight:700;">{}</td>
+            <td>{}</td>
+            <td>{}</td>
+            <td>{}</td>
+        </tr>""".format(status_color, data['status'], html_mod.escape(category), data['finding_count'], sev_html)
 
     pci_rows = ""
     for req, data in report["pci_dss"].items():
         status_color = "#22c55e" if data["status"] == "PASS" else "#dc2626"
-        pci_rows += f"""
+        pci_rows += """
         <tr>
-            <td style="color:{status_color};font-weight:700;">{data['status']}</td>
-            <td>{html_mod.escape(req)}</td>
-            <td>{data['finding_count']}</td>
-        </tr>"""
+            <td style="color:{};font-weight:700;">{}</td>
+            <td>{}</td>
+            <td>{}</td>
+        </tr>""".format(status_color, data['status'], html_mod.escape(req), data['finding_count'])
 
     owasp_pass = sum(1 for d in report["owasp"].values() if d["status"] == "PASS")
     pci_pass = sum(1 for d in report["pci_dss"].values() if d["status"] == "PASS")
 
-    return f"""
-    <h2 class="section-title">OWASP Top 10 (2021) Compliance — {owasp_pass}/{len(report['owasp'])}</h2>
+    table_style = 'style="width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden;"'
+    header_style = 'style="background:#0f172a;"'
+    th_base = 'style="padding:10px 16px;text-align:left;color:#94a3b8;'
+
+    return """
+    <h2 class="section-title">OWASP Top 10 (2021) Compliance &mdash; {owasp_pass}/{owasp_total}</h2>
     <div style="overflow-x:auto;margin-bottom:24px;">
-    <table style="width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden;">
-        <thead><tr style="background:#0f172a;">
-            <th style="padding:10px 16px;text-align:left;color:#94a3b8;width:60px;">Status</th>
-            <th style="padding:10px 16px;text-align:left;color:#94a3b8;">Category</th>
-            <th style="padding:10px 16px;text-align:left;color:#94a3b8;width:80px;">Findings</th>
-            <th style="padding:10px 16px;text-align:left;color:#94a3b8;width:80px;">Severity</th>
+    <table {table_style}>
+        <thead><tr {header_style}>
+            <th {th}width:60px;">Status</th>
+            <th {th}">Category</th>
+            <th {th}width:80px;">Findings</th>
+            <th {th}width:80px;">Severity</th>
         </tr></thead>
         <tbody>{owasp_rows}</tbody>
     </table></div>
 
-    <h2 class="section-title">PCI DSS v4.0 Compliance — {pci_pass}/{len(report['pci_dss'])}</h2>
+    <h2 class="section-title">PCI DSS v4.0 Compliance &mdash; {pci_pass}/{pci_total}</h2>
     <div style="overflow-x:auto;margin-bottom:24px;">
-    <table style="width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden;">
-        <thead><tr style="background:#0f172a;">
-            <th style="padding:10px 16px;text-align:left;color:#94a3b8;width:60px;">Status</th>
-            <th style="padding:10px 16px;text-align:left;color:#94a3b8;">Requirement</th>
-            <th style="padding:10px 16px;text-align:left;color:#94a3b8;width:80px;">Findings</th>
+    <table {table_style}>
+        <thead><tr {header_style}>
+            <th {th}width:60px;">Status</th>
+            <th {th}">Requirement</th>
+            <th {th}width:80px;">Findings</th>
         </tr></thead>
         <tbody>{pci_rows}</tbody>
     </table></div>
-    """
+    """.format(
+        owasp_pass=owasp_pass, owasp_total=len(report['owasp']),
+        pci_pass=pci_pass, pci_total=len(report['pci_dss']),
+        table_style=table_style, header_style=header_style,
+        th=th_base, owasp_rows=owasp_rows, pci_rows=pci_rows,
+    )

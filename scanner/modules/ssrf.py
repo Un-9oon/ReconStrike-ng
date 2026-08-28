@@ -3,6 +3,7 @@ import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from scanner.core import Finding, Severity, ScanSession, build_curl
+from scanner.log import logger
 
 URL_PARAMS = [
     "url", "uri", "path", "dest", "redirect", "return", "next",
@@ -51,17 +52,14 @@ def _check_param(session: ScanSession, url: str, param: str, original: str):
         if not resp:
             continue
 
-        body = resp.text
         for indicator in entry["indicators"]:
-            if re.search(indicator, body, re.IGNORECASE):
+            if re.search(indicator, resp.text, re.IGNORECASE):
                 if not re.search(indicator, baseline, re.IGNORECASE):
-                    is_cloud_meta = "metadata" in entry["payload"] or "169.254" in entry["payload"]
-                    is_file = "file:///" in entry["payload"]
-                    severity = Severity.CRITICAL if (is_cloud_meta or is_file) else Severity.HIGH
-                    curl_cmd = build_curl(test_url)
+                    severity = Severity.CRITICAL if ("169.254" in entry["payload"] or "metadata" in entry["payload"] or "file:///" in entry["payload"]) else Severity.HIGH
 
+                    curl_cmd = build_curl(test_url)
                     session.add_finding(Finding(
-                        title=f"Server-Side Request Forgery (SSRF)",
+                        title="Server-Side Request Forgery (SSRF)",
                         severity=severity,
                         description=(
                             f"The parameter '{param}' is vulnerable to SSRF ({entry['desc']}). "
@@ -115,34 +113,31 @@ def _check_param(session: ScanSession, url: str, param: str, original: str):
                     ))
                     return
 
-    baseline_times = []
+    # time-based detection fallback
     params[param] = [original or "http://www.google.com"]
     baseline_url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
+    baseline_times = []
     for _ in range(2):
-        start2 = time.time()
+        t0 = time.time()
         session.get(baseline_url)
-        baseline_times.append(time.time() - start2)
-    baseline_max = max(baseline_times)
+        baseline_times.append(time.time() - t0)
 
-    internal_time_payload = "http://10.255.255.1"
-    params[param] = [internal_time_payload]
+    params[param] = ["http://10.255.255.1"]
     test_url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
 
     hits = 0
     for _ in range(2):
-        start = time.time()
+        t0 = time.time()
         session.get(test_url)
-        elapsed = time.time() - start
-        if elapsed > baseline_max + 5:
+        if time.time() - t0 > max(baseline_times) + 5:
             hits += 1
 
     if hits >= 2:
-        curl_cmd = build_curl(test_url)
         session.add_finding(Finding(
             title="Potential SSRF (Time-Based)",
             severity=Severity.MEDIUM,
-            description=f"Parameter '{param}' shows consistent timing difference when targeting internal IPs, suggesting the server attempts to connect.",
-            evidence=f"Both requests to internal IP (10.255.255.1) exceeded baseline by >5s.\nBaseline max: {baseline_max:.2f}s",
+            description="Parameter '{}' shows consistent timing difference when targeting internal IPs, suggesting the server attempts to connect.".format(param),
+            evidence="Both requests to internal IP (10.255.255.1) exceeded baseline by >5s.\nBaseline max: {:.2f}s".format(max(baseline_times)),
             remediation="Validate and whitelist allowed URLs. Block internal network access.",
             url=url,
             module="ssrf",
@@ -150,8 +145,8 @@ def _check_param(session: ScanSession, url: str, param: str, original: str):
             confirmed=False,
             location=f"URL parameter '{param}' in {parsed.path}",
             parameter=param,
-            payload=internal_time_payload,
-            curl_command=curl_cmd,
+            payload="http://10.255.255.1",
+            curl_command=build_curl(test_url),
             developer_fix="Validate destination URLs against an allowlist and block private IP ranges before making requests.",
             references="https://owasp.org/www-community/attacks/Server_Side_Request_Forgery",
             detection_method="Injected internal URLs (127.0.0.1, 169.254.169.254 metadata, internal hostnames) into parameters likely to fetch remote resources. Checked responses for internal service signatures or cloud metadata content not present in baseline.",
@@ -159,7 +154,7 @@ def _check_param(session: ScanSession, url: str, param: str, original: str):
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for Server-Side Request Forgery (SSRF)...")
+    logger.info("\n[*] Testing for Server-Side Request Forgery (SSRF)...")
 
     for url in session.crawled_urls:
         parsed = urlparse(url)

@@ -1,8 +1,8 @@
-# ReconStrike
+# ReconStrike-ng
 
 **Advanced Web & Network Vulnerability Assessment Framework**
 
-ReconStrike is a professional-grade vulnerability scanner built in Python that performs comprehensive security assessments against web applications and network endpoints. Designed for penetration testers, security auditors, and DevSecOps teams.
+ReconStrike-ng is a professional-grade vulnerability scanner built in Python that performs comprehensive security assessments against web applications and network endpoints. Designed for penetration testers, security auditors, and DevSecOps teams.
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Modules](https://img.shields.io/badge/scan%20modules-43-green.svg)
@@ -12,9 +12,8 @@ ReconStrike is a professional-grade vulnerability scanner built in Python that p
 
 ---
 
-<p align="center">
-  <img src="https://via.placeholder.com/800x450/0f172a/4ade80?text=Terminal+Preview+Goes+Here+(Upload+a+.gif)" alt="ReconStrike Terminal Preview">
-</p>
+<!-- Terminal demo: record with `asciinema rec` and embed here -->
+<!-- asciinema or GIF demo coming soon -->
 
 ---
 
@@ -22,7 +21,7 @@ ReconStrike is a professional-grade vulnerability scanner built in Python that p
 
 ### Core Scanning Engine
 - **43 vulnerability scan modules** covering OWASP Top 10 and beyond
-- **Zero false positive architecture** -- baseline comparison, double-verification, structural validation
+- **False positive reduction** -- baseline comparison, double-verification, structural validation
 - **Concurrent crawler** -- multi-threaded discovery (5-10x faster than sequential)
 - **WAF detection** -- identifies 10+ WAF/CDN products before scanning
 - **Technology stack fingerprinting** -- frameworks, servers, CMS, CDN, analytics
@@ -62,7 +61,7 @@ ReconStrike is a professional-grade vulnerability scanner built in Python that p
 
 ### Option 1: Docker (Recommended)
 
-Run ReconStrike in a fully isolated sandbox -- no access to your host system, browser, or services.
+Run ReconStrike-ng in a fully isolated sandbox -- no access to your host system, browser, or services.
 
 ```bash
 git clone https://github.com/Un-9oon/ReconStrike-ng.git
@@ -99,7 +98,7 @@ cd ReconStrike-ng
 pip install -r requirements.txt
 
 # Full isolation + MAC + IP + UA rotation
-python3 reconstrike.py -t https://target.com --tor --rotate-mac --rotate-ua --anm --profile deep
+reconstrike-ng -t https://target.com --tor --rotate-mac --rotate-ua --anm --profile deep
 ```
 
 VM advantages over Docker:
@@ -129,36 +128,36 @@ pip install -r requirements.txt
 
 ### Basic Scan
 ```bash
-python3 reconstrike.py -t https://target.com
+reconstrike-ng -t https://target.com
 ```
 
 ### Scan Profiles
 ```bash
 # Quick recon (5 modules, depth 2)
-python3 reconstrike.py -t https://target.com --profile quick
+reconstrike-ng -t https://target.com --profile quick
 
 # Deep scan (all modules, depth 5)
-python3 reconstrike.py -t https://target.com --profile deep
+reconstrike-ng -t https://target.com --profile deep
 
 # Aggressive (all modules, depth 7)
-python3 reconstrike.py -t https://target.com --profile aggressive
+reconstrike-ng -t https://target.com --profile aggressive
 
 # API-focused
-python3 reconstrike.py -t https://api.target.com --profile api --api-scan
+reconstrike-ng -t https://api.target.com --profile api --api-scan
 
 # OWASP compliance check
-python3 reconstrike.py -t https://target.com --profile owasp --compliance
+reconstrike-ng -t https://target.com --profile owasp --compliance
 
 # Passive recon only (no injection tests)
-python3 reconstrike.py -t https://target.com --profile passive
+reconstrike-ng -t https://target.com --profile passive
 
 # Full scan (all 43 modules)
-python3 reconstrike.py -t https://target.com --profile full
+reconstrike-ng -t https://target.com --profile full
 ```
 
 ### Authenticated Scanning
 ```bash
-python3 reconstrike.py -t https://target.com \
+reconstrike-ng -t https://target.com \
   --auth-url https://target.com/login \
   -u admin -p password123
 ```
@@ -166,70 +165,70 @@ python3 reconstrike.py -t https://target.com \
 ### Selective Modules
 ```bash
 # Run specific modules
-python3 reconstrike.py -t https://target.com --modules sqli,xss,headers,ssl
+reconstrike-ng -t https://target.com --modules sqli,xss,headers,ssl
 
 # List all available modules
-python3 reconstrike.py --list-modules
+reconstrike-ng --list-modules
 
 # Run all except slow ones
-python3 reconstrike.py -t https://target.com --exclude-modules portscan,subdomain
+reconstrike-ng -t https://target.com --exclude-modules portscan,subdomain
 ```
 
 ### Advanced Options
 ```bash
 # With proxy (Tor, Burp, etc.)
-python3 reconstrike.py -t https://target.com --proxy socks5://127.0.0.1:9050
+reconstrike-ng -t https://target.com --proxy socks5://127.0.0.1:9050
 
 # Rate-limited scan
-python3 reconstrike.py -t https://target.com --rate-limit 10
+reconstrike-ng -t https://target.com --rate-limit 10
 
 # JSON output for automation
-python3 reconstrike.py -t https://target.com --json --json-file results.json
+reconstrike-ng -t https://target.com --json --json-file results.json
 
 # Compare with previous scan
-python3 reconstrike.py -t https://target.com --diff
+reconstrike-ng -t https://target.com --diff
 
 # Compliance report
-python3 reconstrike.py -t https://target.com --compliance
+reconstrike-ng -t https://target.com --compliance
 
 # CI/CD pipeline (exit 1 on critical, 2 on high)
-python3 reconstrike.py -t https://target.com --ci --severity-threshold HIGH -q
+reconstrike-ng -t https://target.com --ci --severity-threshold HIGH -q
 ```
 
 ### Network Scanning
 
 ```bash
 # Scan a single host (top-1000 ports)
-python3 reconstrike.py --network-scan 192.168.1.1
+reconstrike-ng --network-scan 192.168.1.1
 
 # Scan a CIDR range
-python3 reconstrike.py --network-scan 192.168.1.0/24
+reconstrike-ng --network-scan 192.168.1.0/24
 
 # Custom ports and speed
-python3 reconstrike.py --network-scan 10.0.0.1 --ports 1-65535 --scan-speed 5
+reconstrike-ng --network-scan 10.0.0.1 --ports 1-65535 --scan-speed 5
 
 # Combine with web scan
-python3 reconstrike.py -t https://target.com --network-scan 192.168.1.0/24
+reconstrike-ng -t https://target.com --network-scan 192.168.1.0/24
 ```
 
 ### Nikto-Style Misconfiguration Scan
 
 ```bash
 # Run Nikto scanner (sensitive files, debug endpoints, misconfigs)
-python3 reconstrike.py -t https://target.com --nikto
+reconstrike-ng -t https://target.com --nikto
 
 # Included automatically in full profile
-python3 reconstrike.py -t https://target.com --profile full
+reconstrike-ng -t https://target.com --profile full
 ```
 
 ### Static Analysis (SAST)
 
 ```bash
 # Scan local source code for vulnerabilities
-python3 reconstrike.py --sast-dir /path/to/source
+reconstrike-ng --sast-dir /path/to/source
 
 # Combine DAST + SAST
-python3 reconstrike.py -t https://target.com --sast-dir /path/to/source
+reconstrike-ng -t https://target.com --sast-dir /path/to/source
 ```
 
 SAST modules: hardcoded secrets, insecure functions, SQL injection patterns, insecure cryptography, path traversal risks, sensitive data exposure.
@@ -238,15 +237,15 @@ SAST modules: hardcoded secrets, insecure functions, SQL injection patterns, ins
 
 ```bash
 # Start passive analysis proxy
-python3 reconstrike.py -t https://target.com --dast-proxy --proxy-port 8087
+reconstrike-ng -t https://target.com --dast-proxy --proxy-port 8087
 
 # Configure your browser to use http://127.0.0.1:8087 as proxy
-# Import CA cert from ~/.reconstrike/ca/ca.crt into browser
+# Import CA cert from ~/.reconstrike-ng/ca/ca.crt into browser
 ```
 
 ### Custom Headers & Cookies
 ```bash
-python3 reconstrike.py -t https://target.com \
+reconstrike-ng -t https://target.com \
   --cookie "session=abc123; token=xyz" \
   --header "Authorization: Bearer eyJ..." \
   --header "X-Custom: value"
@@ -256,23 +255,23 @@ python3 reconstrike.py -t https://target.com \
 
 ## Logging
 
-ReconStrike uses Python's structured logging system with configurable verbosity:
+ReconStrike-ng uses Python's structured logging system with configurable verbosity:
 
 ```bash
 # Verbose output (DEBUG level)
-python3 reconstrike.py -t https://target.com --verbose
+reconstrike-ng -t https://target.com --verbose
 
 # Quiet mode (WARNING and above only)
-python3 reconstrike.py -t https://target.com --quiet
+reconstrike-ng -t https://target.com --quiet
 
 # Disable colored output (useful for piping/logging)
-python3 reconstrike.py -t https://target.com --no-color
+reconstrike-ng -t https://target.com --no-color
 
 # Write logs to a file
-python3 reconstrike.py -t https://target.com --log-file scan.log
+reconstrike-ng -t https://target.com --log-file scan.log
 
 # Combine flags
-python3 reconstrike.py -t https://target.com --verbose --log-file debug.log --no-color
+reconstrike-ng -t https://target.com --verbose --log-file debug.log --no-color
 ```
 
 ---
@@ -292,7 +291,7 @@ python3 reconstrike.py -t https://target.com --verbose --log-file debug.log --no
 
 ## CI/CD Integration
 
-ReconStrike integrates into CI/CD pipelines with exit codes based on severity thresholds:
+ReconStrike-ng integrates into CI/CD pipelines with exit codes based on severity thresholds:
 
 ```yaml
 # .github/workflows/security-scan.yml
@@ -324,7 +323,7 @@ jobs:
       - name: Run security scan
         run: |
           cd ReconStrike-ng
-          python3 reconstrike.py \
+          reconstrike-ng \
             -t ${{ vars.SCAN_TARGET }} \
             --profile quick \
             --ci \
@@ -347,7 +346,7 @@ Exit codes: `0` = no findings above threshold, `1` = critical findings, `2` = hi
 
 ## Compliance
 
-ReconStrike maps findings to industry frameworks:
+ReconStrike-ng maps findings to industry frameworks:
 
 - **OWASP Top 10 (2021)** -- A01 through A10 category mapping with pass/fail
 - **PCI DSS v4.0** -- Requirements 6.5.1 through 6.5.10
@@ -358,7 +357,7 @@ Use `--compliance` to generate the compliance report section in both CLI and HTM
 
 ## Disclaimer
 
-This tool is intended for **authorized security testing only**. Only use ReconStrike against systems you own or have explicit written permission to test. Unauthorized scanning is illegal. The authors are not responsible for misuse.
+This tool is intended for **authorized security testing only**. Only use ReconStrike-ng against systems you own or have explicit written permission to test. Unauthorized scanning is illegal. The authors are not responsible for misuse.
 
 ---
 

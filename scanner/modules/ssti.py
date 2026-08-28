@@ -3,13 +3,12 @@ import random
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from scanner.core import Finding, Severity, ScanSession
+from scanner.log import logger
 
 
 def _make_payloads():
-    a = random.randint(71, 97)
-    b = random.randint(103, 127)
-    expected = str(a * b)
-    return a, b, expected
+    a, b = random.randint(71, 97), random.randint(103, 127)
+    return a, b, str(a * b)
 
 
 ENGINES = [
@@ -341,7 +340,7 @@ def _test_form(session: ScanSession, form: dict):
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for Server-Side Template Injection (SSTI)...")
+    logger.info("\n[*] Testing for Server-Side Template Injection (SSTI)...")
 
     for url in session.crawled_urls:
         parsed = urlparse(url)

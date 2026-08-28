@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from scanner.core import Finding, Severity, ScanSession
+from scanner.log import logger
 
 
 WEAK_CIPHERS = {"RC4", "DES", "3DES", "MD5", "NULL", "EXPORT", "anon"}
@@ -44,7 +45,7 @@ def run(session: ScanSession) -> None:
         ))
         return
 
-    print("\n[*] Checking SSL/TLS configuration...")
+    logger.info("\n[*] Checking SSL/TLS configuration...")
     port = parsed.port or 443
     test_cmd = f"openssl s_client -connect {hostname}:{port}"
 
@@ -80,10 +81,8 @@ def run(session: ScanSession) -> None:
                     ))
 
                 if cert:
-                    not_after = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z")
-                    not_after = not_after.replace(tzinfo=timezone.utc)
-                    now = datetime.now(timezone.utc)
-                    days_left = (not_after - now).days
+                    not_after = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
+                    days_left = (not_after - datetime.now(timezone.utc)).days
 
                     if days_left < 0:
                         session.add_finding(Finding(
@@ -120,9 +119,7 @@ def run(session: ScanSession) -> None:
                         ))
 
                     subject = dict(x[0] for x in cert.get("subject", []))
-                    san = cert.get("subjectAltName", [])
-                    cert_names = [subject.get("commonName", "")]
-                    cert_names.extend(v for t, v in san if t == "DNS")
+                    cert_names = [subject.get("commonName", "")] + [v for t, v in cert.get("subjectAltName", []) if t == "DNS"]
                     if not any(_match_hostname(hostname, n) for n in cert_names):
                         session.add_finding(Finding(
                             title="SSL Certificate Hostname Mismatch",
@@ -181,7 +178,7 @@ def run(session: ScanSession) -> None:
             detection_method="Performed TLS handshake analysis checking: protocol version (TLS 1.2+ required), certificate validity and expiration, hostname verification, and cipher suite strength. Uses Python\'s ssl module for direct socket-level inspection.",
         ))
     except (socket.timeout, ConnectionRefusedError, OSError) as e:
-        print(f"  [!] SSL check failed: {e}")
+        logger.warning(f" [!] SSL check failed: {e}")
 
     _check_deprecated_protocols(session, hostname, port)
 

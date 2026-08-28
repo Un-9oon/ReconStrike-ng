@@ -1,0 +1,4 @@
+version=4
+opts=filenamemangle=s/.+\/v?(\d\S+)\.tar\.gz/reconstrike-$1\.tar\.gz/ \
+  https://github.com/Un-9oon/ReconStrike-ng/tags \
+  .*/v?(\d\S+)\.tar\.gz

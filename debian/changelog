@@ -1,4 +1,18 @@
-reconstrike (3.1.0-1) unstable; urgency=medium
+reconstrike-ng (3.1.1-1) unstable; urgency=medium
+
+  * Security hardening: all 82 broad exception handlers narrowed to specific types
+  * Supply chain: requirements-lock.txt with SHA-256 hashes for all 11 deps
+  * File permissions: 0o600 on all report outputs (HTML/PDF/JSON)
+  * Dockerfile: --require-hashes for production builds
+  * SSRF pre-request DNS resolution to prevent TOCTOU attacks
+  * Proxy binds to 127.0.0.1 by default
+  * HTTPS default when no scheme specified
+  * Credential scrubbing from sys.argv
+  * Code optimization: ~3,090 lines removed, all logic intact
+
+ -- CypherSec <cyphersec.404@gmail.com>  Thu, 28 Aug 2026 17:00:00 +0500
+
+reconstrike-ng (3.1.0-1) unstable; urgency=medium
 
   * Initial Debian packaging
   * 43 scan modules with full OWASP Top 10 coverage

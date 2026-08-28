@@ -2,6 +2,8 @@ import json
 import re
 from urllib.parse import urlparse
 
+import requests
+
 from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
@@ -45,71 +47,189 @@ REFLECTION_PATTERNS = [
     (r'"discount"\s*:\s*100', "discount set to 100"),
 ]
 
+_REMEDIATION_FULL = (
+    "1. Use an allowlist of permitted parameters on the server side.\n"
+    "2. Never bind request data directly to model/database objects.\n"
+    "3. Use DTOs (Data Transfer Objects) that only include expected fields.\n"
+    "4. In Rails: use strong_parameters (params.require(:user).permit(:name, :email)).\n"
+    "5. In Django: use serializer fields or form.cleaned_data only.\n"
+    "6. In Express: explicitly pick allowed fields from req.body."
+)
+
+_REMEDIATION_SHORT = (
+    "1. Implement strict parameter allowlisting on the server.\n"
+    "2. Use DTOs that only expose permitted fields.\n"
+    "3. Log and reject unexpected parameters."
+)
+
 
 def _build_curl(method, url, data=None, content_type=None):
-    cmd = f"curl -k -X {method} '{url}'"
+    cmd = "curl -k -X {} '{}'".format(method, url)
     if content_type:
-        cmd += f" -H 'Content-Type: {content_type}'"
+        cmd += " -H 'Content-Type: {}'".format(content_type)
     if data:
-        cmd += f" -d '{data}'"
+        cmd += " -d '{}'".format(data)
     return cmd
 
 
 def _check_reflected(body, baseline_body, param, value):
-    """Check if the injected extra parameter is reflected in the response."""
-    # Direct value reflection
+    # direct reflection
     if value in body and (not baseline_body or value not in baseline_body):
-        return True, f"Value '{value}' reflected in response"
+        return True, "Value '{}' reflected in response".format(value)
 
-    # Check known reflection patterns
-    for pattern, description in REFLECTION_PATTERNS:
+    for pattern, desc in REFLECTION_PATTERNS:
         if re.search(pattern, body, re.IGNORECASE):
             if not baseline_body or not re.search(pattern, baseline_body, re.IGNORECASE):
-                return True, description
+                return True, desc
 
-    # Check if param=value appears in a JSON-like structure
-    json_pattern = rf'"{re.escape(param)}"\s*:\s*("{re.escape(value)}"|{re.escape(value)})'
-    if re.search(json_pattern, body, re.IGNORECASE):
-        if not baseline_body or not re.search(json_pattern, baseline_body, re.IGNORECASE):
-            return True, f"Parameter '{param}' reflected with value '{value}' in JSON"
+    # param=value in JSON structure
+    jp = r'"{0}"\s*:\s*("{1}"|{1})'.format(re.escape(param), re.escape(value))
+    if re.search(jp, body, re.IGNORECASE):
+        if not baseline_body or not re.search(jp, baseline_body, re.IGNORECASE):
+            return True, "Parameter '{}' reflected with value '{}' in JSON".format(param, value)
 
     return False, None
 
 
 def _response_indicates_acceptance(baseline_resp, test_resp):
-    """Check if the response suggests the extra parameter was accepted."""
     if not baseline_resp or not test_resp:
         return False
-
-    # If extra params cause a different (successful) status
     if test_resp.status_code in (200, 201, 302) and baseline_resp.status_code == test_resp.status_code:
         bl = len(baseline_resp.text)
         tl = len(test_resp.text)
         if bl > 0 and abs(tl - bl) / max(bl, 1) > 0.05:
             return True
-
     return False
 
 
-def _test_form_encoded(session, form):
-    """Test form submissions with extra parameters (form-encoded)."""
+def _extract_form_baseline(form):
+    """Returns (action, inputs, source_url, baseline_data, existing_names) or None if not POST."""
     action = form.get("action", "")
     method = form.get("method", "post").lower()
+    if method != "post":
+        return None
     inputs = form.get("inputs", [])
     source_url = form.get("source_url", action)
-    parsed = urlparse(action)
+    baseline_data = {inp["name"]: inp.get("value", "test") for inp in inputs if inp.get("name")}
+    existing_names = {n.lower() for n in baseline_data}
+    return action, inputs, source_url, baseline_data, existing_names
 
-    if method != "post":
+
+def _make_confirmed_finding(action, source_url, param, value, description,
+                            indicator, existing_names, resp, payload_str,
+                            curl_cmd, is_json=False):
+    tag = "JSON" if is_json else "form"
+    loc_prefix = "JSON body submitted to" if is_json else "Form submission to"
+    title = "Mass Assignment via JSON - {}".format(description) if is_json else "Mass Assignment - {}".format(description)
+
+    return Finding(
+        title=title,
+        severity=Severity.HIGH,
+        description=(
+            "The endpoint '{}' is vulnerable to mass assignment via {} body. "
+            "When the extra parameter '{}={}' was injected, the server "
+            "accepted and reflected it ({}). This allows modification of "
+            "fields that should be protected from client-side manipulation."
+        ).format(action, tag, param, value, indicator),
+        evidence=(
+            "Endpoint: {}\nInjected: {}={}\nDescription: {}\n"
+            "Indicator: {}\nOriginal Fields: {}\nPayload: {}\n"
+            "Response Status: {}"
+        ).format(action, param, value, description, indicator,
+                 ", ".join(existing_names), payload_str, resp.status_code),
+        remediation=_REMEDIATION_FULL,
+        url=source_url,
+        module="mass_assignment",
+        cwe="CWE-915",
+        confirmed=True,
+        location="{} {}".format(loc_prefix, action),
+        parameter=param,
+        payload=payload_str,
+        request_method="POST",
+        response_status=resp.status_code,
+        curl_command=curl_cmd,
+        reproduction_steps=(
+            "1. Navigate to: {}\n"
+            "2. Submit POST to {} with payload:\n   {}\n"
+            "3. Observe '{}' reflected in the response.\n"
+            "4. Run: {}"
+        ).format(source_url, action, payload_str, param, curl_cmd),
+        developer_fix=(
+            "File: The handler for POST {action}.\n\n"
+            "VULNERABLE pattern:\n"
+            "  app.post('{action}', (req, res) => {{\n"
+            "    User.update(req.body);  // All fields accepted!\n"
+            "  }});\n\n"
+            "SECURE pattern:\n"
+            "  app.post('{action}', (req, res) => {{\n"
+            "    const {{ name, email }} = req.body;\n"
+            "    User.update({{ name, email }});\n"
+            "  }});"
+        ).format(action=action),
+        affected_component="Parameter binding in handler for {}".format(action),
+        references="https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/ | https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
+        detection_method="Added extra parameter '{}={}' and detected it reflected in server response ({}).".format(param, value, indicator),
+    )
+
+
+def _make_potential_finding(action, source_url, param, value, description,
+                            baseline_text, resp, payload_str, curl_cmd):
+    return Finding(
+        title="Potential Mass Assignment - {}".format(description),
+        severity=Severity.MEDIUM,
+        description=(
+            "The endpoint '{}' may be vulnerable to mass assignment. "
+            "When '{}={}' was added, the server response differed from "
+            "baseline, suggesting the parameter was processed. Manual verification recommended."
+        ).format(action, param, value),
+        evidence=(
+            "Endpoint: {}\nInjected: {}={}\nDescription: {}\n"
+            "Baseline Length: {}\nTest Length: {}\nResponse Status: {}"
+        ).format(action, param, value, description,
+                 len(baseline_text), len(resp.text), resp.status_code),
+        remediation=_REMEDIATION_SHORT,
+        url=source_url,
+        module="mass_assignment",
+        cwe="CWE-915",
+        confirmed=False,
+        location="Form submission to {}".format(action),
+        parameter=param,
+        payload=payload_str,
+        request_method="POST",
+        response_status=resp.status_code,
+        curl_command=curl_cmd,
+        reproduction_steps=(
+            "1. Navigate to: {}\n"
+            "2. Add '{}={}' to the form submission.\n"
+            "3. Compare response with normal submission.\n"
+            "4. Run: {}"
+        ).format(source_url, param, value, curl_cmd),
+        developer_fix=(
+            "File: The handler for POST {}.\n\n"
+            "Use explicit field picking:\n"
+            "  const allowed = ['name', 'email'];\n"
+            "  const data = Object.fromEntries(\n"
+            "    Object.entries(req.body).filter(([k]) => allowed.includes(k))\n"
+            "  );"
+        ).format(action),
+        affected_component="Parameter binding in handler for {}".format(action),
+        references="https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
+        detection_method="Added extra parameter '{}={}' and observed different response vs baseline.".format(param, value),
+    )
+
+
+def _coerce_json_value(value):
+    """Cast string booleans/ints to native JSON types."""
+    if value in ("true", "false"):
+        return value == "true"
+    return int(value) if value.isdigit() else value
+
+
+def _test_form_encoded(session, form):
+    parsed = _extract_form_baseline(form)
+    if not parsed:
         return
-
-    # Build baseline data
-    baseline_data = {}
-    existing_names = set()
-    for inp in inputs:
-        name = inp.get("name")
-        if name:
-            baseline_data[name] = inp.get("value", "test")
-            existing_names.add(name.lower())
+    action, inputs, source_url, baseline_data, existing_names = parsed
 
     baseline_resp = session.post(action, data=baseline_data)
     if not baseline_resp:
@@ -117,7 +237,6 @@ def _test_form_encoded(session, form):
     baseline_text = baseline_resp.text
 
     for param, value, description in EXTRA_PARAMS:
-        # Skip if the parameter already exists in the form
         if param.lower() in existing_names:
             continue
 
@@ -126,164 +245,39 @@ def _test_form_encoded(session, form):
 
         try:
             resp = session.post(action, data=test_data)
-        except Exception as e:
-            logger.debug("mass_assignment _test_form_encoded: request failed: %s", e)
+        except (requests.RequestException, ValueError) as e:
+            logger.debug("mass_assignment form-encoded: %s", e)
             continue
 
-        if not resp or resp.status_code in (404,):
+        if not resp or resp.status_code == 404:
             continue
 
         reflected, indicator = _check_reflected(resp.text, baseline_text, param, value)
 
         if reflected:
-            data_str = "&".join(f"{k}={v}" for k, v in test_data.items())
+            data_str = "&".join("{}={}".format(k, v) for k, v in test_data.items())
             curl_cmd = _build_curl("POST", action, data=data_str)
-            session.add_finding(Finding(
-                title=f"Mass Assignment - {description}",
-                severity=Severity.HIGH,
-                description=(
-                    f"The form endpoint '{action}' is vulnerable to mass assignment. "
-                    f"When the extra parameter '{param}={value}' was added to the form "
-                    f"submission (which was not part of the original form), the server "
-                    f"accepted and reflected it ({indicator}). This allows an attacker to "
-                    f"modify fields that should be protected from client-side manipulation."
-                ),
-                evidence=(
-                    f"Form Action: {action}\n"
-                    f"Form Method: POST\n"
-                    f"Injected Parameter: {param}={value}\n"
-                    f"Description: {description}\n"
-                    f"Indicator: {indicator}\n"
-                    f"Original Fields: {', '.join(existing_names)}\n"
-                    f"Response Status: {resp.status_code}"
-                ),
-                remediation=(
-                    "1. Use an allowlist of permitted parameters on the server side.\n"
-                    "2. Never bind request data directly to model/database objects.\n"
-                    "3. Use DTOs (Data Transfer Objects) that only include expected fields.\n"
-                    "4. In Rails: use strong_parameters (params.require(:user).permit(:name, :email)).\n"
-                    "5. In Django: use serializer fields or form.cleaned_data only.\n"
-                    "6. In Express: explicitly pick allowed fields from req.body."
-                ),
-                url=source_url,
-                module="mass_assignment",
-                cwe="CWE-915",
-                confirmed=True,
-                location=f"Form submission to {action}",
-                parameter=param,
-                payload=f"{param}={value}",
-                request_method="POST",
-                response_status=resp.status_code,
-                curl_command=curl_cmd,
-                reproduction_steps=(
-                    f"1. Navigate to: {source_url}\n"
-                    f"2. Locate the form that submits to {action}\n"
-                    f"3. Using a proxy or browser DevTools, add: {param}={value}\n"
-                    f"4. Submit the form and observe the response.\n"
-                    f"5. Look for: {indicator}\n"
-                    f"6. Run: {curl_cmd}"
-                ),
-                developer_fix=(
-                    f"File: The server-side handler for POST {action}.\n\n"
-                    f"VULNERABLE pattern (do NOT use):\n"
-                    f"  # Python/Django\n"
-                    f"  user = User(**request.POST.dict())\n"
-                    f"  # Rails\n"
-                    f"  User.create(params[:user])\n"
-                    f"  # Express\n"
-                    f"  User.create(req.body)\n\n"
-                    f"SECURE pattern:\n"
-                    f"  # Python/Django\n"
-                    f"  user = User(name=request.POST['name'], email=request.POST['email'])\n"
-                    f"  # Rails\n"
-                    f"  User.create(params.require(:user).permit(:name, :email))\n"
-                    f"  # Express\n"
-                    f"  const {{ name, email }} = req.body;\n"
-                    f"  User.create({{ name, email }})"
-                ),
-                affected_component=f"Parameter binding in form handler for {action}",
-                references="https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/ | https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
-                detection_method=f"Added extra parameter '{param}={value}' to form submission and detected the value reflected in the server response ({indicator}).",
+            session.add_finding(_make_confirmed_finding(
+                action, source_url, param, value, description,
+                indicator, existing_names, resp, data_str, curl_cmd,
             ))
             return
 
-        # Check for acceptance without direct reflection
-        if _response_indicates_acceptance(baseline_resp, resp):
-            # Also check for status code changes that indicate success
-            if resp.status_code in (200, 201, 302):
-                data_str = "&".join(f"{k}={v}" for k, v in test_data.items())
-                curl_cmd = _build_curl("POST", action, data=data_str)
-                session.add_finding(Finding(
-                    title=f"Potential Mass Assignment - {description}",
-                    severity=Severity.MEDIUM,
-                    description=(
-                        f"The form endpoint '{action}' may be vulnerable to mass assignment. "
-                        f"When the extra parameter '{param}={value}' was added to the form "
-                        f"submission, the server response differed from the baseline, suggesting "
-                        f"the parameter was processed. Manual verification is recommended."
-                    ),
-                    evidence=(
-                        f"Form Action: {action}\n"
-                        f"Injected Parameter: {param}={value}\n"
-                        f"Description: {description}\n"
-                        f"Baseline Response Length: {len(baseline_text)}\n"
-                        f"Test Response Length: {len(resp.text)}\n"
-                        f"Response Status: {resp.status_code}"
-                    ),
-                    remediation=(
-                        "1. Implement strict parameter allowlisting on the server.\n"
-                        "2. Use DTOs that only expose permitted fields.\n"
-                        "3. Log and reject unexpected parameters."
-                    ),
-                    url=source_url,
-                    module="mass_assignment",
-                    cwe="CWE-915",
-                    confirmed=False,
-                    location=f"Form submission to {action}",
-                    parameter=param,
-                    payload=f"{param}={value}",
-                    request_method="POST",
-                    response_status=resp.status_code,
-                    curl_command=curl_cmd,
-                    reproduction_steps=(
-                        f"1. Navigate to: {source_url}\n"
-                        f"2. Add '{param}={value}' to the form submission.\n"
-                        f"3. Compare the response with a normal submission.\n"
-                        f"4. Run: {curl_cmd}"
-                    ),
-                    developer_fix=(
-                        f"File: The handler for POST {action}.\n\n"
-                        f"Use explicit field picking:\n"
-                        f"  const allowed = ['name', 'email'];\n"
-                        f"  const data = Object.fromEntries(\n"
-                        f"    Object.entries(req.body).filter(([k]) => allowed.includes(k))\n"
-                        f"  );"
-                    ),
-                    affected_component=f"Parameter binding in handler for {action}",
-                    references="https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
-                    detection_method=f"Added extra parameter '{param}={value}' and observed different response compared to baseline, suggesting the parameter was processed.",
-                ))
-                return
+        if _response_indicates_acceptance(baseline_resp, resp) and resp.status_code in (200, 201, 302):
+            data_str = "&".join("{}={}".format(k, v) for k, v in test_data.items())
+            curl_cmd = _build_curl("POST", action, data=data_str)
+            session.add_finding(_make_potential_finding(
+                action, source_url, param, value, description,
+                baseline_text, resp, data_str, curl_cmd,
+            ))
+            return
 
 
 def _test_form_json(session, form):
-    """Test form submissions with extra parameters via JSON body."""
-    action = form.get("action", "")
-    method = form.get("method", "post").lower()
-    inputs = form.get("inputs", [])
-    source_url = form.get("source_url", action)
-
-    if method != "post":
+    parsed = _extract_form_baseline(form)
+    if not parsed:
         return
-
-    # Build baseline JSON
-    baseline_json = {}
-    existing_names = set()
-    for inp in inputs:
-        name = inp.get("name")
-        if name:
-            baseline_json[name] = inp.get("value", "test")
-            existing_names.add(name.lower())
+    action, inputs, source_url, baseline_json, existing_names = parsed
 
     baseline_resp = session.post(action, json=baseline_json)
     if not baseline_resp:
@@ -295,92 +289,32 @@ def _test_form_json(session, form):
             continue
 
         test_json = dict(baseline_json)
-        # Use appropriate types for JSON
-        if value in ("true", "false"):
-            test_json[param] = value == "true"
-        elif value.isdigit():
-            test_json[param] = int(value)
-        else:
-            test_json[param] = value
+        test_json[param] = _coerce_json_value(value)
 
         try:
             resp = session.post(action, json=test_json)
-        except Exception as e:
-            logger.debug("mass_assignment _test_form_json: request failed: %s", e)
+        except (requests.RequestException, ValueError) as e:
+            logger.debug("mass_assignment json: %s", e)
             continue
 
-        if not resp or resp.status_code in (404,):
+        if not resp or resp.status_code == 404:
             continue
 
         reflected, indicator = _check_reflected(resp.text, baseline_text, param, value)
+        if not reflected:
+            continue
 
-        if reflected:
-            data_str = json.dumps(test_json)
-            curl_cmd = _build_curl("POST", action, data=data_str, content_type="application/json")
-            session.add_finding(Finding(
-                title=f"Mass Assignment via JSON - {description}",
-                severity=Severity.HIGH,
-                description=(
-                    f"The endpoint '{action}' is vulnerable to mass assignment via JSON body. "
-                    f"When the extra field '{param}' was added to the JSON payload, the server "
-                    f"accepted and reflected it ({indicator}). This allows attackers to modify "
-                    f"protected fields by adding them to API requests."
-                ),
-                evidence=(
-                    f"Endpoint: {action}\n"
-                    f"Injected Field: {param}\n"
-                    f"Injected Value: {test_json[param]}\n"
-                    f"Description: {description}\n"
-                    f"Indicator: {indicator}\n"
-                    f"Original Fields: {', '.join(existing_names)}\n"
-                    f"Payload: {data_str}\n"
-                    f"Response Status: {resp.status_code}"
-                ),
-                remediation=(
-                    "1. Validate JSON payloads against a strict schema.\n"
-                    "2. Use an allowlist of accepted fields for each endpoint.\n"
-                    "3. Separate read-only fields from writable fields in the data model.\n"
-                    "4. Use framework-level protections (serializers, strong params).\n"
-                    "5. Log rejected fields for security monitoring."
-                ),
-                url=source_url,
-                module="mass_assignment",
-                cwe="CWE-915",
-                confirmed=True,
-                location=f"JSON body submitted to {action}",
-                parameter=param,
-                payload=data_str,
-                request_method="POST",
-                response_status=resp.status_code,
-                curl_command=curl_cmd,
-                reproduction_steps=(
-                    f"1. Navigate to: {source_url}\n"
-                    f"2. Submit a POST request to {action} with JSON:\n"
-                    f"   {data_str}\n"
-                    f"3. Observe '{param}' reflected in the response.\n"
-                    f"4. Run: {curl_cmd}"
-                ),
-                developer_fix=(
-                    f"File: The handler for POST {action}.\n\n"
-                    f"VULNERABLE pattern:\n"
-                    f"  app.post('{action}', (req, res) => {{\n"
-                    f"    User.update(req.body);  // All fields accepted!\n"
-                    f"  }});\n\n"
-                    f"SECURE pattern:\n"
-                    f"  app.post('{action}', (req, res) => {{\n"
-                    f"    const {{ name, email }} = req.body;  // Only allowed fields\n"
-                    f"    User.update({{ name, email }});\n"
-                    f"  }});"
-                ),
-                affected_component=f"JSON body processing in handler for {action}",
-                references="https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/ | https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
-                detection_method=f"Added extra JSON field '{param}' to POST body and detected it reflected in the server response ({indicator}).",
-            ))
-            return
+        data_str = json.dumps(test_json)
+        curl_cmd = _build_curl("POST", action, data=data_str, content_type="application/json")
+        session.add_finding(_make_confirmed_finding(
+            action, source_url, param, value, description,
+            indicator, existing_names, resp, data_str, curl_cmd, is_json=True,
+        ))
+        return
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for Mass Assignment / Parameter Tampering...")
+    logger.info("\n[*] Testing for Mass Assignment / Parameter Tampering...")
 
     for form in session.forms:
         _test_form_encoded(session, form)

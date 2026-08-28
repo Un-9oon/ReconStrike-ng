@@ -3,6 +3,7 @@ import hashlib
 from urllib.parse import urlparse
 
 from scanner.core import Finding, Severity, ScanSession, build_curl
+from scanner.log import logger
 
 
 # Unique marker prefix to avoid false positives
@@ -51,39 +52,32 @@ DISPLAY_PATH_PATTERNS = [
 
 
 def _generate_marker(payload_type, param_name, form_action):
-    """Generate a unique marker for tracking payload->observation relationships."""
-    raw = f"{payload_type}:{param_name}:{form_action}"
-    short_hash = hashlib.md5(raw.encode()).hexdigest()[:8]
-    return f"{_MARKER}{short_hash}"
+    raw = "{}:{}:{}".format(payload_type, param_name, form_action)
+    return _MARKER + hashlib.sha256(raw.encode()).hexdigest()[:8]
 
 
 def _is_storage_field(name):
-    """Check if a field name suggests it stores and displays user input."""
     return bool(STORAGE_FIELD_PATTERNS.search(name)) if name else False
 
 
 def _is_display_page(url):
-    """Check if a URL is likely to display stored content."""
-    for pattern in DISPLAY_PATH_PATTERNS:
-        if pattern.search(url):
-            return True
-    return False
+    return any(p.search(url) for p in DISPLAY_PATH_PATTERNS)
 
 
 def _build_payloads_with_markers(marker):
-    """Build all payload variants with the given marker."""
-    payloads = []
-    for template, desc in SQLI_PAYLOADS:
-        payloads.append((template.format(m=marker), desc, "SQL Injection"))
-    for template, desc in XSS_PAYLOADS:
-        payloads.append((template.format(m=marker), desc, "Cross-Site Scripting"))
-    for template, desc in SSTI_PAYLOADS:
-        payloads.append((template.format(m=marker), desc, "Server-Side Template Injection"))
-    return payloads
+    groups = [
+        (SQLI_PAYLOADS, "SQL Injection"),
+        (XSS_PAYLOADS, "Cross-Site Scripting"),
+        (SSTI_PAYLOADS, "Server-Side Template Injection"),
+    ]
+    return [
+        (tpl.format(m=marker), desc, itype)
+        for payloads, itype in groups
+        for tpl, desc in payloads
+    ]
 
 
 def _submit_payloads(session, form):
-    """Submit payloads into storage-capable form fields and return tracking info."""
     action = form.get("action", "")
     method = form.get("method", "post").lower()
     inputs = form.get("inputs", [])
@@ -93,12 +87,10 @@ def _submit_payloads(session, form):
         return []
 
     tracking = []
-
-    baseline_data = {}
-    for inp in inputs:
-        name = inp.get("name")
-        if name:
-            baseline_data[name] = inp.get("value", "test")
+    baseline_data = {
+        inp.get("name"): inp.get("value", "test")
+        for inp in inputs if inp.get("name")
+    }
 
     for inp in inputs:
         name = inp.get("name")
@@ -119,7 +111,6 @@ def _submit_payloads(session, form):
             if not resp:
                 continue
 
-            # Check if submission was accepted (not rejected with error)
             if resp.status_code in (200, 201, 301, 302, 303):
                 tracking.append({
                     "marker": marker,
@@ -139,22 +130,13 @@ def _submit_payloads(session, form):
 
 
 def _check_for_reflections(session, tracking):
-    """Crawl display pages to check if submitted payloads appear unescaped."""
     if not tracking:
         return
 
-    # Collect all markers to search for
-    marker_map = {}
-    for entry in tracking:
-        marker_map[entry["marker"]] = entry
+    marker_map = {e["marker"]: e for e in tracking}
 
-    # Check all crawled URLs and specifically display pages
-    urls_to_check = set()
-    for url in session.crawled_urls:
-        if _is_display_page(url):
-            urls_to_check.add(url)
+    urls_to_check = {url for url in session.crawled_urls if _is_display_page(url)}
 
-    # Also add source URLs and common display pages
     parsed_target = urlparse(list(session.crawled_urls)[0]) if session.crawled_urls else None
     if parsed_target:
         base = f"{parsed_target.scheme}://{parsed_target.netloc}"
@@ -165,7 +147,6 @@ def _check_for_reflections(session, tracking):
         for page in common_pages:
             urls_to_check.add(base + page)
 
-    # Add form source URLs
     for entry in tracking:
         urls_to_check.add(entry["source_url"])
 
@@ -180,7 +161,6 @@ def _check_for_reflections(session, tracking):
             if marker not in body:
                 continue
 
-            # Marker found! Check if the payload is reflected unescaped
             payload = entry["payload"]
             injection_type = entry["injection_type"]
             description = entry["description"]
@@ -188,13 +168,11 @@ def _check_for_reflections(session, tracking):
             form_action = entry["form_action"]
             source_url = entry["source_url"]
 
-            # Determine the severity and confirmation based on what we find
             confirmed = False
             reflected_raw = False
             evidence_detail = ""
 
             if injection_type == "Cross-Site Scripting":
-                # Check for unescaped XSS markers
                 xss_patterns = [
                     f"<script>{marker}</script>",
                     f'onerror="alert(\'{marker}\')"',
@@ -211,7 +189,6 @@ def _check_for_reflections(session, tracking):
                     evidence_detail = f"XSS marker '{marker}' found in page but payload may be partially escaped."
 
             elif injection_type == "SQL Injection":
-                # The marker appearing in the output suggests the SQL was interpreted
                 confirmed = False
                 evidence_detail = (
                     f"SQL injection marker '{marker}' appeared in page content at {url}. "
@@ -220,7 +197,6 @@ def _check_for_reflections(session, tracking):
                 )
 
             elif injection_type == "Server-Side Template Injection":
-                # Check if the template expression was evaluated
                 if marker in body and "{{" not in body.split(marker)[0][-20:]:
                     confirmed = True
                     evidence_detail = (
@@ -321,7 +297,7 @@ def _check_for_reflections(session, tracking):
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for Second-Order Injection...")
+    logger.info("\n[*] Testing for Second-Order Injection...")
 
     all_tracking = []
 

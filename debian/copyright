@@ -1,5 +1,5 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: reconstrike
+Upstream-Name: reconstrike-ng
 Source: https://github.com/Un-9oon/ReconStrike-ng
 
 Files: *

@@ -7,16 +7,16 @@ RUN groupadd -r scanner && useradd -r -g scanner -d /app -s /usr/sbin/nologin sc
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && \
+COPY requirements-lock.txt .
+RUN pip install --no-cache-dir --require-hashes -r requirements-lock.txt && \
     pip install --no-cache-dir cryptography>=42.0.0
 
 COPY . .
 
-RUN mkdir -p /app/output /app/.reconstrike && \
+RUN mkdir -p /app/output /app/.reconstrike-ng && \
     chown -R scanner:scanner /app
 
 USER scanner
 
-ENTRYPOINT ["python3", "reconstrike.py"]
+ENTRYPOINT ["python3", "reconstrike_ng.py"]
 CMD ["--help"]

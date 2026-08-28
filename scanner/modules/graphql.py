@@ -4,6 +4,7 @@ import time
 from urllib.parse import urljoin
 
 from scanner.core import Finding, Severity, ScanSession
+from scanner.log import logger
 
 GRAPHQL_ENDPOINTS = [
     "/graphql",
@@ -107,8 +108,15 @@ def _build_curl(url, query, method="POST"):
     return f"curl -k -X {method} '{url}' -H 'Content-Type: application/json' -d '{payload}'"
 
 
+def _send_query(session, method, url, query):
+    if method == "POST":
+        return session.post(
+            url, data=json.dumps({"query": query}),
+            headers={"Content-Type": "application/json"})
+    return session.get(url, params={"query": query})
+
+
 def _build_depth_query(depth):
-    """Build a deeply nested query for depth limit testing."""
     inner = "id"
     field_name = "node"
     for _ in range(depth):
@@ -119,66 +127,41 @@ def _build_depth_query(depth):
 def _is_graphql_response(resp):
     if not resp:
         return False
-    content_type = resp.headers.get("Content-Type", "")
-    if "application/json" in content_type or "application/graphql" in content_type:
-        try:
-            body = resp.json()
-            return "data" in body or "errors" in body or "__schema" in str(body)
-        except (json.JSONDecodeError, ValueError):
-            pass
-    # Some endpoints return GraphQL even without proper content type
     try:
         body = resp.json()
-        return "data" in body or "errors" in body
+        return "data" in body or "errors" in body or "__schema" in str(body)
     except (json.JSONDecodeError, ValueError):
         return False
 
 
 def _discover_endpoints(session, base_url):
-    """Discover active GraphQL endpoints."""
     found = []
     test_query = '{"query": "{ __typename }"}'
 
     for path in GRAPHQL_ENDPOINTS:
         url = urljoin(base_url, path)
 
-        # Try POST with JSON
-        resp = session.post(
-            url,
-            data=test_query,
-            headers={"Content-Type": "application/json"}
-        )
+        resp = session.post(url, data=test_query, headers={"Content-Type": "application/json"})
         if resp and resp.status_code in (200, 400, 405) and _is_graphql_response(resp):
             found.append(("POST", url, resp))
             continue
 
-        # Try GET with query param
         resp = session.get(url, params={"query": "{ __typename }"})
         if resp and resp.status_code in (200, 400) and _is_graphql_response(resp):
             found.append(("GET", url, resp))
             continue
 
-        # Check if the page itself is GraphiQL
         resp = session.get(url)
         if resp and resp.status_code == 200:
             body = resp.text.lower()
-            if "graphiql" in body or "graphql playground" in body or "graphql-playground" in body:
+            if any(s in body for s in ("graphiql", "graphql playground", "graphql-playground")):
                 found.append(("GRAPHIQL", url, resp))
 
     return found
 
 
 def _test_introspection(session, method, url):
-    """Test if introspection queries are allowed."""
-    if method == "POST":
-        resp = session.post(
-            url,
-            data=json.dumps({"query": INTROSPECTION_QUERY}),
-            headers={"Content-Type": "application/json"}
-        )
-    else:
-        resp = session.get(url, params={"query": INTROSPECTION_QUERY})
-
+    resp = _send_query(session, method, url, INTROSPECTION_QUERY)
     if not resp:
         return False
 
@@ -190,7 +173,6 @@ def _test_introspection(session, method, url):
     if "data" in body and body["data"] and "__schema" in body.get("data", {}):
         schema_data = body["data"]["__schema"]
         type_names = [t.get("name", "") for t in schema_data.get("types", [])]
-        # Filter out built-in types
         custom_types = [t for t in type_names if not t.startswith("__") and t not in (
             "String", "Int", "Float", "Boolean", "ID",
         )]
@@ -265,36 +247,16 @@ def _test_introspection(session, method, url):
 
 
 def _test_depth_attack(session, method, url):
-    """Test if query depth limits are enforced."""
-    # First verify a shallow query works
-    shallow_query = "{ __typename }"
-    if method == "POST":
-        resp = session.post(
-            url,
-            data=json.dumps({"query": shallow_query}),
-            headers={"Content-Type": "application/json"}
-        )
-    else:
-        resp = session.get(url, params={"query": shallow_query})
+    resp = _send_query(session, method, url, "{ __typename }")
 
     if not resp or resp.status_code not in (200, 400):
         return
 
-    # Test increasingly deep queries
     for depth in [10, 15, 20]:
         deep_query = _build_depth_query(depth)
-        if method == "POST":
-            start = time.time()
-            resp = session.post(
-                url,
-                data=json.dumps({"query": deep_query}),
-                headers={"Content-Type": "application/json"}
-            )
-            elapsed = time.time() - start
-        else:
-            start = time.time()
-            resp = session.get(url, params={"query": deep_query})
-            elapsed = time.time() - start
+        start = time.time()
+        resp = _send_query(session, method, url, deep_query)
+        elapsed = time.time() - start
 
         if not resp:
             continue
@@ -304,7 +266,6 @@ def _test_depth_attack(session, method, url):
         except (json.JSONDecodeError, ValueError):
             continue
 
-        # If deep query returns data or takes long, depth limiting is absent
         has_data = "data" in body and body["data"] is not None
         has_depth_error = False
         if "errors" in body:
@@ -314,7 +275,7 @@ def _test_depth_attack(session, method, url):
             ])
 
         if has_depth_error:
-            return  # Depth limiting is in place
+            return
 
         if has_data or elapsed > 5:
             curl_cmd = _build_curl(url, deep_query, method)
@@ -381,7 +342,6 @@ def _test_depth_attack(session, method, url):
 
 
 def _test_batching(session, url):
-    """Test if query batching is allowed (DoS vector)."""
     batch_payload = [
         {"query": "{ __typename }"},
         {"query": "{ __typename }"},
@@ -465,7 +425,6 @@ def _test_batching(session, url):
 
 
 def _test_graphiql_exposure(session, method, url, resp):
-    """Check if GraphiQL IDE is exposed."""
     if method == "GRAPHIQL" or (resp and resp.status_code == 200):
         body = resp.text.lower() if resp else ""
         indicators = [
@@ -533,7 +492,6 @@ def _test_graphiql_exposure(session, method, url, resp):
 
 
 def _test_no_auth(session, method, url):
-    """Test if sensitive queries work without authentication."""
     sensitive_queries = [
         ("{ users { id email } }", "users"),
         ("{ user(id: 1) { id email role } }", "user by id"),
@@ -541,14 +499,7 @@ def _test_no_auth(session, method, url):
     ]
 
     for query, label in sensitive_queries:
-        if method == "POST":
-            resp = session.post(
-                url,
-                data=json.dumps({"query": query}),
-                headers={"Content-Type": "application/json"}
-            )
-        else:
-            resp = session.get(url, params={"query": query})
+        resp = _send_query(session, method, url, query)
 
         if not resp:
             continue
@@ -568,7 +519,6 @@ def _test_no_auth(session, method, url):
             ])
 
         if has_data and not has_auth_error:
-            # Check if we got actual user data
             data = body.get("data", {})
             data_str = json.dumps(data)
             if len(data_str) > 20 and data_str != '{"__typename":null}':
@@ -629,7 +579,7 @@ def _test_no_auth(session, method, url):
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing GraphQL endpoints...")
+    logger.info("\n[*] Testing GraphQL endpoints...")
 
     base_url = session.config.target
     endpoints = _discover_endpoints(session, base_url)
@@ -638,11 +588,10 @@ def run(session: ScanSession) -> None:
         return
 
     for method, url, resp in endpoints:
-        print(f"  [+] Found GraphQL endpoint: {url} ({method})")
+        logger.info(f" [+] Found GraphQL endpoint: {url} ({method})")
 
         if method == "GRAPHIQL":
             _test_graphiql_exposure(session, method, url, resp)
-            # Try POST for further tests
             test_resp = session.post(
                 url,
                 data=json.dumps({"query": "{ __typename }"}),

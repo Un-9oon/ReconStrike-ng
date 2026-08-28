@@ -3,6 +3,7 @@ import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from scanner.core import Finding, Severity, ScanSession
+from scanner.log import logger
 
 ERROR_PATTERNS = [
     (r"SQL syntax.*?MySQL", "MySQL"),
@@ -49,20 +50,19 @@ def _build_curl(method, url, data=None):
 
 
 def _extract_error_snippet(body, pattern):
-    match = re.search(pattern, body, re.IGNORECASE)
-    if match:
-        start = max(0, match.start() - 60)
-        end = min(len(body), match.end() + 60)
-        return body[start:end].replace('\n', ' ').strip()
-    return ""
+    m = re.search(pattern, body, re.IGNORECASE)
+    if not m:
+        return ""
+    start = max(0, m.start() - 60)
+    end = min(len(body), m.end() + 60)
+    return body[start:end].replace('\n', ' ').strip()
 
 
 def _get_baseline(session, url, param, original):
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     params[param] = [original or "harmless"]
-    baseline_url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
-    resp = session.get(baseline_url)
+    resp = session.get(urlunparse(parsed._replace(query=urlencode(params, doseq=True))))
     return resp.text if resp else ""
 
 
@@ -240,11 +240,8 @@ def _check_time_based(session: ScanSession, url: str, param: str, original_value
 
 
 def _check_form_sqli(session: ScanSession, form: dict):
-    baseline_data = {}
-    for inp in form["inputs"]:
-        name = inp.get("name")
-        if name:
-            baseline_data[name] = inp.get("value", "test")
+    baseline_data = {inp["name"]: inp.get("value", "test")
+                     for inp in form["inputs"] if inp.get("name")}
 
     if form["method"] == "post":
         baseline_resp = session.post(form["action"], data=baseline_data)
@@ -277,8 +274,6 @@ def _check_form_sqli(session: ScanSession, form: dict):
                     snippet = _extract_error_snippet(resp.text, pattern)
                     data_str = "&".join(f"{k}={v}" for k, v in post_data.items())
                     curl_cmd = _build_curl(method, form["action"], data=data_str) if method == "POST" else _build_curl("GET", f"{form['action']}?{data_str}")
-                    source_url = form.get("source_url", form["action"])
-
                     session.add_finding(Finding(
                         title=f"SQL Injection in Form (Error-Based) - {db_type}",
                         severity=Severity.CRITICAL,
@@ -303,7 +298,7 @@ def _check_form_sqli(session: ScanSession, form: dict):
                             "3. Use an ORM for database access.\n"
                             "4. Suppress database errors in production."
                         ),
-                        url=source_url,
+                        url=form.get("source_url", form["action"]),
                         module="sqli",
                         cwe="CWE-89",
                         confirmed=True,
@@ -315,7 +310,7 @@ def _check_form_sqli(session: ScanSession, form: dict):
                         response_status=resp.status_code,
                         curl_command=curl_cmd,
                         reproduction_steps=(
-                            f"1. Navigate to: {source_url}\n"
+                            "1. Navigate to: {}\n".format(form.get("source_url", form["action"])) +
                             f"2. Locate the form that submits to: {form['action']}\n"
                             f"3. Enter the following in the '{name}' field: {payload}\n"
                             f"4. Submit the form.\n"
@@ -338,7 +333,7 @@ def _check_form_sqli(session: ScanSession, form: dict):
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for SQL Injection...")
+    logger.info("\n[*] Testing for SQL Injection...")
 
     for url in session.crawled_urls:
         parsed = urlparse(url)

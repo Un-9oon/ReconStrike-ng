@@ -2,6 +2,7 @@ import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from scanner.core import Finding, Severity, ScanSession, build_curl
+from scanner.log import logger
 
 ID_PARAMS = [
     "id", "uid", "user_id", "userid", "account", "account_id",
@@ -30,16 +31,18 @@ PII_PATTERNS = [
     r'(?:balance|salary|income|credit|debit)\s*[:=]\s*[\d$]',
 ]
 
+_DETECTION = (
+    "Modified numeric ID parameters in URLs (e.g., id=1 to id=2) and compared responses. "
+    "If different valid data is returned for adjacent IDs without authorization checks, "
+    "this confirms insecure direct object reference."
+)
 
 
-def _contains_pii(text: str) -> bool:
-    for pattern in PII_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
-            return True
-    return False
+def _contains_pii(text):
+    return any(re.search(p, text, re.IGNORECASE) for p in PII_PATTERNS)
 
 
-def _responses_differ_meaningfully(resp1_text: str, resp2_text: str) -> bool:
+def _responses_differ_meaningfully(resp1_text, resp2_text):
     if resp1_text == resp2_text:
         return False
     len_ratio = len(resp2_text) / max(len(resp1_text), 1)
@@ -47,12 +50,10 @@ def _responses_differ_meaningfully(resp1_text: str, resp2_text: str) -> bool:
         return True
     common = set(resp1_text.split()) & set(resp2_text.split())
     total = set(resp1_text.split()) | set(resp2_text.split())
-    if not total:
-        return False
-    return len(common) / len(total) < 0.80
+    return len(common) / len(total) < 0.80 if total else False
 
 
-def _check_param_idor(session: ScanSession, url: str, param: str, original: str):
+def _check_param_idor(session, url, param, original):
     if not original.isdigit():
         return
 
@@ -78,20 +79,18 @@ def _check_param_idor(session: ScanSession, url: str, param: str, original: str)
 
     if _contains_pii(resp.text) and not _contains_pii(resp_original.text):
         session.add_finding(Finding(
-            title=f"Insecure Direct Object Reference (IDOR)",
+            title="Insecure Direct Object Reference (IDOR)",
             severity=Severity.HIGH,
             description=(
-                f"The parameter '{param}' allows access to other users' data by changing the numeric ID. "
-                f"Response for ID {test_id} contains PII (email addresses, phone numbers, or financial data) "
-                f"not present in the original response for ID {original}, confirming unauthorized data access."
-            ),
+                "The parameter '{param}' allows access to other users' data by changing the numeric ID. "
+                "Response for ID {tid} contains PII (email addresses, phone numbers, or financial data) "
+                "not present in the original response for ID {oid}, confirming unauthorized data access."
+            ).format(param=param, tid=test_id, oid=original),
             evidence=(
-                f"Parameter: {param}\n"
-                f"Original ID: {original}\n"
-                f"Test ID: {test_id}\n"
-                f"Both returned HTTP 200 with different content.\n"
-                f"Test response contains PII patterns not in original."
-            ),
+                "Parameter: {param}\nOriginal ID: {oid}\nTest ID: {tid}\n"
+                "Both returned HTTP 200 with different content.\n"
+                "Test response contains PII patterns not in original."
+            ).format(param=param, oid=original, tid=test_id),
             remediation=(
                 "1. Implement server-side authorization checks on every data access.\n"
                 "2. Use indirect references (UUIDs) instead of sequential IDs.\n"
@@ -101,53 +100,54 @@ def _check_param_idor(session: ScanSession, url: str, param: str, original: str)
             module="idor",
             cwe="CWE-639",
             confirmed=True,
-            location=f"URL parameter '{param}' in {parsed.path}",
+            location="URL parameter '{}' in {}".format(param, parsed.path),
             parameter=param,
             request_method="GET",
             response_status=resp.status_code,
-            curl_command=f"Original: {curl_original}\nModified: {curl_test}",
+            curl_command="Original: {}\nModified: {}".format(curl_original, curl_test),
             reproduction_steps=(
-                f"1. Access: {url} (original ID: {original})\n"
-                f"2. Change '{param}' to {test_id}: {test_url}\n"
-                f"3. Both URLs return HTTP 200 with different content.\n"
-                f"4. The modified response contains PII from another user.\n"
-                f"5. Run both:\n   {curl_original}\n   {curl_test}"
-            ),
+                "1. Access: {url} (original ID: {oid})\n"
+                "2. Change '{param}' to {tid}: {turl}\n"
+                "3. Both URLs return HTTP 200 with different content.\n"
+                "4. The modified response contains PII from another user.\n"
+                "5. Run both:\n   {c1}\n   {c2}"
+            ).format(url=url, oid=original, param=param, tid=test_id,
+                     turl=test_url, c1=curl_original, c2=curl_test),
             developer_fix=(
-                f"File: Server-side handler for '{parsed.path}' that retrieves data by '{param}'.\n\n"
-                f"VULNERABLE:\n"
-                f"  data = db.query('SELECT * FROM records WHERE id = ?', [request.params['{param}']])\n"
-                f"  return data  # No auth check!\n\n"
-                f"SECURE:\n"
-                f"  data = db.query('SELECT * FROM records WHERE id = ? AND user_id = ?', [request.params['{param}'], current_user.id])\n"
-                f"  if not data: return 403\n\n"
-                f"Also consider using UUIDs instead of sequential integer IDs."
-            ),
-            affected_component=f"Data access in route handler for {parsed.path}",
+                "File: Server-side handler for '{path}' that retrieves data by '{param}'.\n\n"
+                "VULNERABLE:\n"
+                "  data = db.query('SELECT * FROM records WHERE id = ?', [request.params['{param}']])\n"
+                "  return data  # No auth check!\n\n"
+                "SECURE:\n"
+                "  data = db.query('SELECT * FROM records WHERE id = ? AND user_id = ?', [request.params['{param}'], current_user.id])\n"
+                "  if not data: return 403\n\n"
+                "Also consider using UUIDs instead of sequential integer IDs."
+            ).format(path=parsed.path, param=param),
+            affected_component="Data access in route handler for {}".format(parsed.path),
             references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/05-Authorization_Testing/04-Testing_for_Insecure_Direct_Object_References",
-            detection_method="Modified numeric ID parameters in URLs (e.g., id=1 to id=2) and compared responses. If different valid data is returned for adjacent IDs without authorization checks, this confirms insecure direct object reference.",
+            detection_method=_DETECTION,
         ))
     elif _contains_pii(resp.text):
         session.add_finding(Finding(
-            title=f"Potential IDOR: Sequential ID Accessible",
+            title="Potential IDOR: Sequential ID Accessible",
             severity=Severity.MEDIUM,
-            description=f"Parameter '{param}' returns different data with PII when ID is changed from {original} to {test_id}.",
-            evidence=f"Original ID: {original}, Test ID: {test_id}\nBoth returned HTTP 200 with different content containing PII.",
+            description="Parameter '{}' returns different data with PII when ID is changed from {} to {}.".format(param, original, test_id),
+            evidence="Original ID: {}, Test ID: {}\nBoth returned HTTP 200 with different content containing PII.".format(original, test_id),
             remediation="Verify server-side authorization. Use UUIDs instead of sequential IDs.",
             url=url,
             module="idor",
             cwe="CWE-639",
             confirmed=False,
-            location=f"URL parameter '{param}' in {parsed.path}",
+            location="URL parameter '{}' in {}".format(param, parsed.path),
             parameter=param,
             curl_command=curl_test,
             developer_fix="Add authorization checks to verify the authenticated user owns the requested resource before returning data.",
             references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/05-Authorization_Testing/04-Testing_for_Insecure_Direct_Object_References",
-            detection_method="Modified numeric ID parameters in URLs (e.g., id=1 to id=2) and compared responses. If different valid data is returned for adjacent IDs without authorization checks, this confirms insecure direct object reference.",
+            detection_method=_DETECTION,
         ))
 
 
-def _check_path_idor(session: ScanSession, url: str):
+def _check_path_idor(session, url):
     for pattern in ID_PATH_PATTERNS:
         match = re.search(pattern, url)
         if not match:
@@ -170,30 +170,30 @@ def _check_path_idor(session: ScanSession, url: str):
             session.add_finding(Finding(
                 title="Potential IDOR via URL Path",
                 severity=Severity.MEDIUM,
-                description=f"URL path contains sequential ID that returns different data with PII when modified from {original_id} to {test_id}.",
-                evidence=f"Original: {url}\nModified: {test_url}\nBoth returned HTTP 200 with different PII-containing content.",
+                description="URL path contains sequential ID that returns different data with PII when modified from {} to {}.".format(original_id, test_id),
+                evidence="Original: {}\nModified: {}\nBoth returned HTTP 200 with different PII-containing content.".format(url, test_url),
                 remediation="Implement authorization checks. Use non-guessable identifiers (UUIDs).",
                 url=url,
                 module="idor",
                 cwe="CWE-639",
                 confirmed=False,
-                location=f"Sequential ID in URL path: {pattern}",
-                curl_command=f"curl -k '{test_url}'",
+                location="Sequential ID in URL path: {}".format(pattern),
+                curl_command="curl -k '{}'".format(test_url),
                 reproduction_steps=(
-                    f"1. Access original URL: {url}\n"
-                    f"2. Change the ID in the path to: {test_id}\n"
-                    f"3. Access modified URL: {test_url}\n"
-                    f"4. Both return HTTP 200 with different user data."
-                ),
+                    "1. Access original URL: {url}\n"
+                    "2. Change the ID in the path to: {tid}\n"
+                    "3. Access modified URL: {turl}\n"
+                    "4. Both return HTTP 200 with different user data."
+                ).format(url=url, tid=test_id, turl=test_url),
                 developer_fix="Add server-side authorization to verify the requesting user owns the resource at the given path ID.",
                 references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/05-Authorization_Testing/04-Testing_for_Insecure_Direct_Object_References",
-                detection_method="Modified numeric ID parameters in URLs (e.g., id=1 to id=2) and compared responses. If different valid data is returned for adjacent IDs without authorization checks, this confirms insecure direct object reference.",
+                detection_method=_DETECTION,
             ))
             return
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for Insecure Direct Object References (IDOR)...")
+    logger.info("\n[*] Testing for Insecure Direct Object References (IDOR)...")
 
     for url in session.crawled_urls:
         parsed = urlparse(url)

@@ -30,8 +30,13 @@ DANGEROUS_SERVICES = {
 
 BANNER_GRAB_PORTS = {21, 22, 23, 25, 80, 110, 143, 3306, 6379, 11211, 27017}
 
+_DETECTION = (
+    "Performed TCP connect scan against common service ports (21-27017) with banner grabbing. "
+    "Identified exposed services that should not be publicly accessible (databases, Docker API, Redis, etc.)."
+)
 
-def _scan_port(host: str, port: int, timeout: float = 2.0) -> tuple[int, bool, str]:
+
+def _scan_port(host, port, timeout=2.0):
     banner = ""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -44,18 +49,18 @@ def _scan_port(host: str, port: int, timeout: float = 2.0) -> tuple[int, bool, s
                         sock.send(b"HEAD / HTTP/1.0\r\nHost: " + host.encode() + b"\r\n\r\n")
                     sock.settimeout(2)
                     banner = sock.recv(1024).decode("utf-8", errors="replace").strip()
-                except Exception as e:
+                except OSError as e:
                     logger.debug("portscan _scan_port: socket operation failed: %s", e)
             sock.close()
             return port, True, banner
         sock.close()
-    except Exception as e:
+    except OSError as e:
         logger.debug("portscan _scan_port: socket operation failed: %s", e)
     return port, False, ""
 
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Running port scan...")
+    logger.info("\n[*] Running port scan...")
 
     parsed = urlparse(session.config.target)
     hostname = parsed.netloc.split(":")[0]
@@ -63,10 +68,10 @@ def run(session: ScanSession) -> None:
     try:
         ip = socket.gethostbyname(hostname)
     except socket.gaierror:
-        print(f"  [!] Cannot resolve hostname: {hostname}")
+        logger.warning(" [!] Cannot resolve hostname: {}".format(hostname))
         return
 
-    print(f"  [*] Scanning {hostname} ({ip}) -- {len(COMMON_PORTS)} ports...")
+    logger.info(" [*] Scanning {} ({}) -- {} ports...".format(hostname, ip, len(COMMON_PORTS)))
 
     open_ports = []
     with ThreadPoolExecutor(max_workers=50) as executor:
@@ -80,7 +85,7 @@ def run(session: ScanSession) -> None:
     open_ports.sort(key=lambda x: x[0])
 
     if not open_ports:
-        print("  [+] No commonly targeted ports found open.")
+        logger.info(" [+] No commonly targeted ports found open.")
         return
 
     web_ports = {80, 443, 8080, 8443}
@@ -93,68 +98,73 @@ def run(session: ScanSession) -> None:
             continue
 
         is_dangerous = service in DANGEROUS_SERVICES
-        severity = Severity.CRITICAL if service == "Docker API (unencrypted)" else (Severity.HIGH if is_dangerous else default_severity)
+        if service == "Docker API (unencrypted)":
+            severity = Severity.CRITICAL
+        elif is_dangerous:
+            severity = Severity.HIGH
+        else:
+            severity = default_severity
 
-        evidence = f"Port: {port}\nService: {service}\nHost: {hostname} ({ip})"
+        evidence = "Port: {}\nService: {}\nHost: {} ({})".format(port, service, hostname, ip)
         if banner:
-            evidence += f"\nBanner: {banner[:200]}"
+            evidence += "\nBanner: {}".format(banner[:200])
 
-        nmap_cmd = f"nmap -sV -p {port} {hostname}"
+        nmap_cmd = "nmap -sV -p {} {}".format(port, hostname)
 
         if is_dangerous:
             session.add_finding(Finding(
-                title=f"Exposed Service: {service} (port {port})",
+                title="Exposed Service: {} (port {})".format(service, port),
                 severity=severity,
                 description=(
-                    f"{service} service is exposed on port {port}. This service should not be publicly accessible "
-                    f"as it may allow unauthorized data access, command execution, or lateral movement."
-                ),
+                    "{svc} service is exposed on port {port}. This service should not be publicly accessible "
+                    "as it may allow unauthorized data access, command execution, or lateral movement."
+                ).format(svc=service, port=port),
                 evidence=evidence,
                 remediation=(
-                    f"1. Restrict access to {service} (port {port}) using firewall rules.\n"
-                    f"2. Only allow connections from trusted IPs.\n"
-                    f"3. Use VPN or SSH tunneling for remote access.\n"
-                    f"4. Enable authentication if not already configured."
-                ),
+                    "1. Restrict access to {svc} (port {port}) using firewall rules.\n"
+                    "2. Only allow connections from trusted IPs.\n"
+                    "3. Use VPN or SSH tunneling for remote access.\n"
+                    "4. Enable authentication if not already configured."
+                ).format(svc=service, port=port),
                 url=session.config.target,
                 module="portscan",
                 cwe="CWE-284",
                 confirmed=True,
-                location=f"Port {port} ({service}) on {hostname} ({ip})",
+                location="Port {} ({}) on {} ({})".format(port, service, hostname, ip),
                 curl_command=nmap_cmd,
                 reproduction_steps=(
-                    f"1. Run: nmap -p {port} {hostname}\n"
-                    f"2. Port {port} is open and running {service}.\n"
-                    f"3. Run: {nmap_cmd} for version detection."
-                ),
+                    "1. Run: nmap -p {port} {host}\n"
+                    "2. Port {port} is open and running {svc}.\n"
+                    "3. Run: {cmd} for version detection."
+                ).format(port=port, host=hostname, svc=service, cmd=nmap_cmd),
                 developer_fix=(
-                    f"1. Firewall rule to block external access:\n"
-                    f"   iptables -A INPUT -p tcp --dport {port} -j DROP\n"
-                    f"   # Or allow only specific IPs:\n"
-                    f"   iptables -A INPUT -p tcp --dport {port} -s TRUSTED_IP -j ACCEPT\n\n"
-                    f"2. Cloud security groups: Remove port {port} from public-facing rules.\n"
-                    f"3. Bind to localhost: Configure {service} to listen on 127.0.0.1 only."
-                ),
-                affected_component=f"{service} service on port {port}",
+                    "1. Firewall rule to block external access:\n"
+                    "   iptables -A INPUT -p tcp --dport {port} -j DROP\n"
+                    "   # Or allow only specific IPs:\n"
+                    "   iptables -A INPUT -p tcp --dport {port} -s TRUSTED_IP -j ACCEPT\n\n"
+                    "2. Cloud security groups: Remove port {port} from public-facing rules.\n"
+                    "3. Bind to localhost: Configure {svc} to listen on 127.0.0.1 only."
+                ).format(port=port, svc=service),
+                affected_component="{} service on port {}".format(service, port),
                 references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information",
-                detection_method="Performed TCP connect scan against common service ports (21-27017) with banner grabbing. Identified exposed services that should not be publicly accessible (databases, Docker API, Redis, etc.).",
+                detection_method=_DETECTION,
             ))
         elif severity != Severity.INFO:
             session.add_finding(Finding(
-                title=f"Open Port: {service} ({port})",
+                title="Open Port: {} ({})".format(service, port),
                 severity=severity,
-                description=f"{service} is accessible on port {port}. Review if this service needs to be publicly exposed.",
+                description="{} is accessible on port {}. Review if this service needs to be publicly exposed.".format(service, port),
                 evidence=evidence,
-                remediation=f"Review if port {port} ({service}) needs to be publicly accessible. Apply firewall rules.",
+                remediation="Review if port {} ({}) needs to be publicly accessible. Apply firewall rules.".format(port, service),
                 url=session.config.target,
                 module="portscan",
                 cwe="CWE-284",
                 confirmed=True,
-                location=f"Port {port} ({service}) on {hostname} ({ip})",
+                location="Port {} ({}) on {} ({})".format(port, service, hostname, ip),
                 curl_command=nmap_cmd,
-                developer_fix=f"If not needed publicly:\n  iptables -A INPUT -p tcp --dport {port} -j DROP",
-                detection_method="Performed TCP connect scan against common service ports (21-27017) with banner grabbing. Identified exposed services that should not be publicly accessible (databases, Docker API, Redis, etc.).",
+                developer_fix="If not needed publicly:\n  iptables -A INPUT -p tcp --dport {} -j DROP".format(port),
+                detection_method=_DETECTION,
             ))
 
-    port_list = ", ".join(f"{p}({s})" for p, s, _ in open_ports)
-    print(f"  [+] Open ports: {port_list}")
+    port_list = ", ".join("{}({})".format(p, s) for p, s, _ in open_ports)
+    logger.info(" [+] Open ports: {}".format(port_list))

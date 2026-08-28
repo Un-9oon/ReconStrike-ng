@@ -77,7 +77,7 @@ class TestFPFingerprint(unittest.TestCase):
     def test_body_hash_match_is_fp(self):
         import hashlib
         body = "<html><body>Page Not Found</body></html>"
-        body_hash = hashlib.md5(body.encode()).hexdigest()
+        body_hash = hashlib.sha256(body.encode()).hexdigest()
 
         fp = FPFingerprint()
         fp.calibrated = True

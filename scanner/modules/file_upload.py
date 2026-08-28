@@ -2,6 +2,8 @@ import re
 import random
 import string
 
+import requests
+
 from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
@@ -16,147 +18,151 @@ UPLOAD_PAYLOADS = [
     {"name": ".htaccess Upload", "filename": ".htaccess", "content": 'AddType application/x-httpd-php .jpg', "content_type": "application/octet-stream", "indicator": None, "severity": Severity.CRITICAL, "desc": ".htaccess override"},
 ]
 
+_DETECTION = (
+    "Uploaded test files with dangerous extensions (.php, .jsp, .asp) and content types "
+    "through discovered upload forms. Checked if files were stored in web-accessible "
+    "locations and if server-side code execution occurred."
+)
+
 
 def run(session: ScanSession) -> None:
-    print("\n[*] Testing for file upload vulnerabilities...")
+    logger.info("\n[*] Testing for file upload vulnerabilities...")
 
     for form in session.forms:
         file_inputs = [inp for inp in form["inputs"] if inp.get("type") == "file"]
         if not file_inputs:
             continue
 
-        print(f"  [*] Found file upload form at {form['action']}")
+        logger.info(" [*] Found file upload form at {}".format(form['action']))
 
         for file_input in file_inputs:
             field_name = file_input.get("name", "file")
-
-            other_data = {}
-            for inp in form["inputs"]:
-                name = inp.get("name")
-                if not name or inp.get("type") == "file":
-                    continue
-                other_data[name] = inp.get("value", "test")
+            other_data = {
+                inp.get("name"): inp.get("value", "test")
+                for inp in form["inputs"]
+                if inp.get("name") and inp.get("type") != "file"
+            }
 
             for payload in UPLOAD_PAYLOADS:
                 marker = "".join(random.choices(string.ascii_lowercase, k=6))
-                filename = payload["filename"].replace("test", f"vstest_{marker}")
+                filename = payload["filename"].replace("test", "vstest_{}".format(marker))
                 source_url = form.get("source_url", form["action"])
 
                 files = {field_name: (filename, payload["content"], payload["content_type"])}
                 resp = session.post(form["action"], files=files, data=other_data)
-                if not resp:
+                if not resp or resp.status_code not in (200, 201, 301, 302):
                     continue
 
-                if resp.status_code in (200, 201, 301, 302):
-                    upload_confirmed = False
-                    uploaded_url = ""
+                upload_confirmed, uploaded_url = False, ""
+                url_patterns = [
+                    r'(?:src|href|url|path|file)\s*[=:]\s*["\']?([^"\'>\s]*{esc}[^"\'>\s]*)'.format(esc=re.escape(filename)),
+                    r'["\']([^"\']*uploads?[^"\']*{esc}[^"\']*)["\']'.format(esc=re.escape(marker)),
+                    r'["\']([^"\']*files?[^"\']*{esc}[^"\']*)["\']'.format(esc=re.escape(marker)),
+                ]
 
-                    url_patterns = [
-                        rf'(?:src|href|url|path|file)\s*[=:]\s*["\']?([^"\'>\s]*{re.escape(filename)}[^"\'>\s]*)',
-                        rf'["\']([^"\']*uploads?[^"\']*{re.escape(marker)}[^"\']*)["\']',
-                        rf'["\']([^"\']*files?[^"\']*{re.escape(marker)}[^"\']*)["\']',
-                    ]
+                for pat in url_patterns:
+                    match = re.search(pat, resp.text, re.IGNORECASE)
+                    if match:
+                        uploaded_url = match.group(1)
+                        break
 
-                    for pattern in url_patterns:
-                        match = re.search(pattern, resp.text, re.IGNORECASE)
-                        if match:
-                            uploaded_url = match.group(1)
-                            break
+                if uploaded_url:
+                    from urllib.parse import urljoin
+                    full_url = urljoin(form["action"], uploaded_url)
+                    file_resp = session.get(full_url)
 
-                    if uploaded_url:
-                        from urllib.parse import urljoin
-                        full_url = urljoin(form["action"], uploaded_url)
-                        file_resp = session.get(full_url)
+                    if file_resp and payload["indicator"] and payload["indicator"] in file_resp.text:
+                        upload_confirmed = True
+                        ct = payload["content_type"]
+                        curl_cmd = "curl -k -X POST '{}' -F '{}=@{};type={}'".format(
+                            form['action'], field_name, filename, ct)
+                        session.add_finding(Finding(
+                            title="Unrestricted File Upload: {}".format(payload['name']),
+                            severity=payload["severity"],
+                            description=(
+                                "The file upload at {action} accepts {desc} files and "
+                                "the uploaded file is executable/accessible at {furl}. This enables "
+                                "Remote Code Execution (RCE) - an attacker can upload a web shell and "
+                                "take complete control of the server."
+                            ).format(action=form['action'], desc=payload['desc'], furl=full_url),
+                            evidence=(
+                                "Upload Form: {action}\n"
+                                "Field Name: {field}\n"
+                                "Uploaded File: {fname}\n"
+                                "Content-Type: {ct}\n"
+                                "Accessible At: {furl}\n"
+                                "Execution Confirmed: Content executed/rendered successfully"
+                            ).format(action=form['action'], field=field_name, fname=filename,
+                                     ct=payload['content_type'], furl=full_url),
+                            remediation=(
+                                "1. Validate file types server-side using magic bytes, not just extension.\n"
+                                "2. Store uploads outside the web root.\n"
+                                "3. Use random filenames, never preserve the original.\n"
+                                "4. Set Content-Disposition: attachment for all downloads.\n"
+                                "5. Implement file size limits.\n"
+                                "6. Scan uploads for malware."
+                            ),
+                            url=source_url,
+                            module="file_upload",
+                            cwe="CWE-434",
+                            confirmed=True,
+                            location="File upload field '{}' at {}".format(field_name, form['action']),
+                            parameter=field_name,
+                            payload=filename,
+                            request_method="POST",
+                            response_status=resp.status_code,
+                            curl_command=curl_cmd,
+                            reproduction_steps=(
+                                "1. Navigate to: {src}\n"
+                                "2. Upload a file named '{fname}' with {desc} content.\n"
+                                "3. The file is accepted (HTTP {status}).\n"
+                                "4. Access the uploaded file at: {furl}\n"
+                                "5. The server-side code executes, confirming RCE."
+                            ).format(src=source_url, fname=filename, desc=payload['desc'],
+                                     status=resp.status_code, furl=full_url),
+                            developer_fix=(
+                                "File: Upload handler at {action}\n\n"
+                                "1. Validate file type by magic bytes:\n"
+                                "   import magic\n"
+                                "   mime = magic.from_buffer(file.read(2048), mime=True)\n"
+                                "   ALLOWED = {{'image/jpeg', 'image/png', 'image/gif'}}\n"
+                                "   if mime not in ALLOWED: reject()\n\n"
+                                "2. Store outside web root:\n"
+                                "   upload_dir = '/var/data/uploads/'  # Not in /var/www/\n\n"
+                                "3. Rename files:\n"
+                                "   filename = str(uuid4()) + '.jpg'  # Random name, safe extension"
+                            ).format(action=form['action']),
+                            affected_component="File upload handler at {}".format(form['action']),
+                            references="https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload",
+                            detection_method=_DETECTION,
+                        ))
+                        return
 
-                        if file_resp and payload["indicator"] and payload["indicator"] in file_resp.text:
-                            upload_confirmed = True
-                            ct = payload["content_type"]
-                            curl_cmd = f"curl -k -X POST '{form['action']}' -F '{field_name}=@{filename};type={ct}'"
+                if not upload_confirmed and payload["filename"] == ".htaccess":
+                    if resp.status_code in (200, 201):
+                        reject_words = ["error", "invalid", "not allowed", "rejected",
+                                        "failed", "denied", "forbidden", "unsupported"]
+                        body_lower = resp.text.lower()
+                        if not any(w in body_lower for w in reject_words):
                             session.add_finding(Finding(
-                                title=f"Unrestricted File Upload: {payload['name']}",
-                                severity=payload["severity"],
-                                description=(
-                                    f"The file upload at {form['action']} accepts {payload['desc']} files and "
-                                    f"the uploaded file is executable/accessible at {full_url}. This enables "
-                                    f"Remote Code Execution (RCE) - an attacker can upload a web shell and "
-                                    f"take complete control of the server."
-                                ),
-                                evidence=(
-                                    f"Upload Form: {form['action']}\n"
-                                    f"Field Name: {field_name}\n"
-                                    f"Uploaded File: {filename}\n"
-                                    f"Content-Type: {payload['content_type']}\n"
-                                    f"Accessible At: {full_url}\n"
-                                    f"Execution Confirmed: Content executed/rendered successfully"
-                                ),
-                                remediation=(
-                                    "1. Validate file types server-side using magic bytes, not just extension.\n"
-                                    "2. Store uploads outside the web root.\n"
-                                    "3. Use random filenames, never preserve the original.\n"
-                                    "4. Set Content-Disposition: attachment for all downloads.\n"
-                                    "5. Implement file size limits.\n"
-                                    "6. Scan uploads for malware."
-                                ),
+                                title="File Upload Accepts .htaccess",
+                                severity=Severity.HIGH,
+                                description=".htaccess file was accepted by the upload handler, potentially allowing Apache configuration override.",
+                                evidence="Uploaded .htaccess, server returned {} without error.".format(resp.status_code),
+                                remediation="Block uploads of server configuration files (.htaccess, web.config, .env).",
                                 url=source_url,
                                 module="file_upload",
                                 cwe="CWE-434",
-                                confirmed=True,
-                                location=f"File upload field '{field_name}' at {form['action']}",
-                                parameter=field_name,
-                                payload=filename,
-                                request_method="POST",
-                                response_status=resp.status_code,
-                                curl_command=curl_cmd,
-                                reproduction_steps=(
-                                    f"1. Navigate to: {source_url}\n"
-                                    f"2. Upload a file named '{filename}' with {payload['desc']} content.\n"
-                                    f"3. The file is accepted (HTTP {resp.status_code}).\n"
-                                    f"4. Access the uploaded file at: {full_url}\n"
-                                    f"5. The server-side code executes, confirming RCE."
-                                ),
-                                developer_fix=(
-                                    f"File: Upload handler at {form['action']}\n\n"
-                                    f"1. Validate file type by magic bytes:\n"
-                                    f"   import magic\n"
-                                    f"   mime = magic.from_buffer(file.read(2048), mime=True)\n"
-                                    f"   ALLOWED = {{'image/jpeg', 'image/png', 'image/gif'}}\n"
-                                    f"   if mime not in ALLOWED: reject()\n\n"
-                                    f"2. Store outside web root:\n"
-                                    f"   upload_dir = '/var/data/uploads/'  # Not in /var/www/\n\n"
-                                    f"3. Rename files:\n"
-                                    f"   filename = str(uuid4()) + '.jpg'  # Random name, safe extension"
-                                ),
-                                affected_component=f"File upload handler at {form['action']}",
-                                references="https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload",
-                                detection_method="Uploaded test files with dangerous extensions (.php, .jsp, .asp) and content types through discovered upload forms. Checked if files were stored in web-accessible locations and if server-side code execution occurred.",
+                                confirmed=False,
+                                location="File upload at {}".format(form['action']),
+                                developer_fix="Add .htaccess, web.config, .env to your upload blocklist. Check filename before saving.",
+                                detection_method=_DETECTION,
                             ))
-                            return
-
-                    if not upload_confirmed and payload["filename"] == ".htaccess":
-                        if resp.status_code in (200, 201):
-                            error_indicators = ["error", "invalid", "not allowed", "rejected",
-                                                 "failed", "denied", "forbidden", "unsupported"]
-                            body_lower = resp.text.lower()
-                            if not any(ind in body_lower for ind in error_indicators):
-                                session.add_finding(Finding(
-                                    title="File Upload Accepts .htaccess",
-                                    severity=Severity.HIGH,
-                                    description=".htaccess file was accepted by the upload handler, potentially allowing Apache configuration override.",
-                                    evidence=f"Uploaded .htaccess, server returned {resp.status_code} without error.",
-                                    remediation="Block uploads of server configuration files (.htaccess, web.config, .env).",
-                                    url=source_url,
-                                    module="file_upload",
-                                    cwe="CWE-434",
-                                    confirmed=False,
-                                    location=f"File upload at {form['action']}",
-                                    developer_fix="Add .htaccess, web.config, .env to your upload blocklist. Check filename before saving.",
-                                    detection_method="Uploaded test files with dangerous extensions (.php, .jsp, .asp) and content types through discovered upload forms. Checked if files were stored in web-accessible locations and if server-side code execution occurred.",
-                                ))
 
             _check_size_limit(session, form, field_name, other_data)
 
 
-def _check_size_limit(session: ScanSession, form: dict, field_name: str, other_data: dict):
+def _check_size_limit(session, form, field_name, other_data):
     large_content = "A" * (10 * 1024 * 1024)
     files = {field_name: ("largefile.txt", large_content, "text/plain")}
     try:
@@ -167,13 +173,13 @@ def _check_size_limit(session: ScanSession, form: dict, field_name: str, other_d
                 title="No File Size Limit on Upload",
                 severity=Severity.LOW,
                 description="File upload accepts very large files (10MB+) without rejection, potentially enabling denial-of-service via disk exhaustion.",
-                evidence=f"Uploaded 10MB file to {form['action']}, server returned {resp.status_code}.",
+                evidence="Uploaded 10MB file to {}, server returned {}.".format(form['action'], resp.status_code),
                 remediation="Implement server-side file size limits (e.g., 5MB for images).",
                 url=source_url,
                 module="file_upload",
                 cwe="CWE-770",
                 confirmed=True,
-                location=f"File upload at {form['action']}",
+                location="File upload at {}".format(form['action']),
                 developer_fix=(
                     "Add file size validation:\n"
                     "  Python/Flask: app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024\n"
@@ -181,8 +187,8 @@ def _check_size_limit(session: ScanSession, form: dict, field_name: str, other_d
                     "  Nginx: client_max_body_size 5m;\n"
                     "  Express: app.use(express.json({ limit: '5mb' }))"
                 ),
-                affected_component=f"File upload handler at {form['action']}",
-                detection_method="Uploaded test files with dangerous extensions (.php, .jsp, .asp) and content types through discovered upload forms. Checked if files were stored in web-accessible locations and if server-side code execution occurred.",
+                affected_component="File upload handler at {}".format(form['action']),
+                detection_method=_DETECTION,
             ))
-    except Exception as e:
+    except (requests.RequestException, ValueError) as e:
         logger.debug("file_upload _check_size_limit: operation failed: %s", e)
