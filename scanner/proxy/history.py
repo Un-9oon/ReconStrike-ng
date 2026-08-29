@@ -97,13 +97,17 @@ class HistoryDB:
                method: str = "", host: str = "", limit: int = 100) -> list[HttpTransaction]:
         conditions, params = [], []
         if url_pattern:
-            conditions.append("url LIKE ?"); params.append("%{}%".format(url_pattern))
+            conditions.append("url LIKE ?")
+            params.append("%{}%".format(url_pattern))
         if status_code:
-            conditions.append("status_code = ?"); params.append(status_code)
+            conditions.append("status_code = ?")
+            params.append(status_code)
         if method:
-            conditions.append("method = ?"); params.append(method.upper())
+            conditions.append("method = ?")
+            params.append(method.upper())
         if host:
-            conditions.append("host LIKE ?"); params.append("%{}%".format(host))
+            conditions.append("host LIKE ?")
+            params.append("%{}%".format(host))
 
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
         params.append(limit)
@@ -145,9 +149,11 @@ class HistoryDB:
             }
             entries.append(entry)
 
-        har = {"log": {"version": "1.2",
-               "creator": {"name": "ReconStrike DAST Proxy", "version": "1.0"},
-               "entries": entries}}
+        har = {"log": {
+            "version": "1.2",
+            "creator": {"name": "ReconStrike DAST Proxy", "version": "1.0"},
+            "entries": entries,
+        }}
 
         output_path = Path(output_path)
         output_path.write_text(json.dumps(har, indent=2))

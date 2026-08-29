@@ -20,6 +20,7 @@ def _cleanup_cert_files():
             pass
     _pending_cert_files.clear()
 
+
 atexit.register(_cleanup_cert_files)
 
 import requests
@@ -138,8 +139,10 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
         t1 = threading.Thread(target=_relay, args=(client_sock, upstream), daemon=True)
         t2 = threading.Thread(target=_relay, args=(upstream, client_sock), daemon=True)
-        t1.start(); t2.start()
-        t1.join(); t2.join()
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
         upstream.close()
 
     def _connect_mitm(self, host: str, port: int):
@@ -161,8 +164,10 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         os.fchmod(key_fd, 0o600)
         _pending_cert_files.extend([cert_path, key_path])
         try:
-            os.write(cert_fd, cert_pem); os.close(cert_fd)
-            os.write(key_fd, key_pem); os.close(key_fd)
+            os.write(cert_fd, cert_pem)
+            os.close(cert_fd)
+            os.write(key_fd, key_pem)
+            os.close(key_fd)
 
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)

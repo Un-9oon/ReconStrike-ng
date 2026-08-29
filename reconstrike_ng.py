@@ -529,10 +529,14 @@ def main():
             logger.info("Rate Limit : %s req/s", args.rate_limit)
         if anm_enabled:
             methods = []
-            if args.tor: methods.append("Tor")
-            if args.proxy_pool: methods.append("ProxyPool")
-            if args.rotate_mac: methods.append("MAC")
-            if anm_cfg.rotate_ua: methods.append("UA")
+            if args.tor:
+                methods.append("Tor")
+            if args.proxy_pool:
+                methods.append("ProxyPool")
+            if args.rotate_mac:
+                methods.append("MAC")
+            if anm_cfg.rotate_ua:
+                methods.append("UA")
             logger.info("ANM        : ACTIVE [%s]", ", ".join(methods))
         if args.stealth:
             logger.info("Stealth    : ACTIVE [%s profile, %s timing]", stealth_cfg.profile_name, args.stealth_speed)
