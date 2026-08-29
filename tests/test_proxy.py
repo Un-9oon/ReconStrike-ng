@@ -253,7 +253,10 @@ class TestCAManager(unittest.TestCase):
 
         tmpdir = tempfile.mkdtemp()
         try:
-            key_path, cert_path = generate_root_ca(ca_dir=tmpdir)
+            try:
+                key_path, cert_path = generate_root_ca(ca_dir=tmpdir)
+            except ImportError:
+                self.skipTest("cryptography library not installed")
             self.assertTrue(key_path.exists())
             self.assertTrue(cert_path.exists())
 

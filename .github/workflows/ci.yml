@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -35,4 +35,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install flake8
-      - run: flake8 scanner/ reconstrike_ng.py --max-line-length=120 --ignore=E501,W503,W504,E402,F401,F841,F541,E302,E303,E741,W293,E127,E128,E231,E226
+      - run: flake8 scanner/ reconstrike_ng.py --max-line-length=120 --ignore=E501,W503,W504,E303,E302

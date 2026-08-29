@@ -195,7 +195,13 @@ SERVICE_FINGERPRINTS = {
 }
 
 
+_HOSTNAME_RE = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$')
+
+
 def _resolve_cname(hostname: str) -> str:
+    if not hostname or not _HOSTNAME_RE.match(hostname) or len(hostname) > 253:
+        logger.debug("subdomain_takeover _resolve_cname: invalid hostname: %s", hostname[:60])
+        return ""
     try:
         import subprocess
         result = subprocess.run(

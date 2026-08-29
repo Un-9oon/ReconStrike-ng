@@ -1,0 +1,3 @@
+# Extra dependencies for Docker builds that are not in the hashed lock file.
+# Pin exact versions for reproducibility. Update hashes when upgrading.
+cryptography==44.0.0

@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP",
     "Intended Audience :: Information Technology",
     "Intended Audience :: Developers",
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
 ]
 dependencies = [

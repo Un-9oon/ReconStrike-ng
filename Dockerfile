@@ -7,9 +7,9 @@ RUN groupadd -r scanner && useradd -r -g scanner -d /app -s /usr/sbin/nologin sc
 
 WORKDIR /app
 
-COPY requirements-lock.txt .
+COPY requirements-lock.txt requirements-docker-extras.txt ./
 RUN pip install --no-cache-dir --require-hashes -r requirements-lock.txt && \
-    pip install --no-cache-dir cryptography>=42.0.0
+    pip install --no-cache-dir -r requirements-docker-extras.txt
 
 COPY . .
 

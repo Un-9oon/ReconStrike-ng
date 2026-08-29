@@ -234,7 +234,7 @@ Examples:
     return parser.parse_args()
 
 
-def _resolve_modules(args) -> list[str]:
+def _resolve_modules(args) -> tuple[list[str], int | None]:
     if args.full:
         profile = SCAN_PROFILES["full"]
         selected, depth_override = profile["modules"], profile["depth"]
@@ -315,11 +315,14 @@ def _ci_exit_code(session: ScanSession, threshold: str) -> int:
     severity_rank = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
     exit_codes = {Severity.CRITICAL: 1, Severity.HIGH: 2, Severity.MEDIUM: 3}
     threshold_rank = severity_rank.get(threshold, 2)
+    worst_code = 0
     for f in session.findings:
-        if severity_rank.get(f.severity.value, 0) >= threshold_rank:
-            if f.severity in exit_codes:
-                return exit_codes[f.severity]
-    return 0
+        rank = severity_rank.get(f.severity.value, 0)
+        if rank >= threshold_rank and f.severity in exit_codes:
+            code = exit_codes[f.severity]
+            if worst_code == 0 or code < worst_code:
+                worst_code = code
+    return worst_code
 
 
 class ProgressTracker:
@@ -343,13 +346,13 @@ class ProgressTracker:
             f"\r  {Fore.CYAN}[{bar}] {pct:5.1f}% "
             f"({self.current}/{self.total}) "
             f"ETA: {remaining:.0f}s - {module_name}{Style.RESET_ALL}",
-            end="", flush=True,
+            end="", flush=True, file=sys.stderr,
         )
 
     def finish(self):
         if not self.quiet:
             elapsed = time.time() - self.start_time
-            print(f"\r  {Fore.GREEN}[{'█' * 30}] 100.0% complete in {elapsed:.1f}s{' ' * 30}{Style.RESET_ALL}")
+            print(f"\r  {Fore.GREEN}[{'█' * 30}] 100.0% complete in {elapsed:.1f}s{' ' * 30}{Style.RESET_ALL}", file=sys.stderr)
 
 
 # Global reference for SIGINT cleanup
@@ -368,6 +371,10 @@ def main():
     signal.signal(signal.SIGINT, _sigint_handler)
     args = parse_args()
 
+    if args.log_file:
+        from scanner.core import _sanitize_path as _sp
+        args.log_file = _sp(args.log_file)
+
     setup_logging(verbose=args.verbose, quiet=args.quiet, no_color=args.no_color, log_file=args.log_file)
 
     if args.no_color:
@@ -382,8 +389,12 @@ def main():
         sys.exit(0)
 
     if args.password_file:
-        with open(args.password_file) as f:
-            args.password = f.read().strip()
+        try:
+            with open(args.password_file) as f:
+                args.password = f.read().strip()
+        except (OSError, IOError) as e:
+            logger.error("Cannot read password file %s: %s", args.password_file, e)
+            sys.exit(1)
     elif args.password:
         logger.warning("--password is visible in process list. Use --password-file or set RECONSTRIKE_PASSWORD env var.")
         for i, arg in enumerate(sys.argv):
@@ -394,8 +405,12 @@ def main():
         args.password = os.environ["RECONSTRIKE_PASSWORD"]
 
     if args.tor_password_file:
-        with open(args.tor_password_file) as f:
-            args.tor_password = f.read().strip()
+        try:
+            with open(args.tor_password_file) as f:
+                args.tor_password = f.read().strip()
+        except (OSError, IOError) as e:
+            logger.error("Cannot read Tor password file %s: %s", args.tor_password_file, e)
+            sys.exit(1)
     elif args.tor_password:
         logger.warning("--tor-password is visible in process list. Use --tor-password-file or set RECONSTRIKE_TOR_PASSWORD env var.")
         for i, arg in enumerate(sys.argv):
@@ -467,7 +482,7 @@ def main():
                 custom_headers[k.strip()] = v.strip()
 
     selected_modules, depth_override = _resolve_modules(args)
-    depth = depth_override if depth_override else args.depth
+    depth = depth_override if depth_override is not None else args.depth
 
     anm_enabled = args.anm or args.tor or args.proxy_pool or args.rotate_mac or args.rotate_ua
     auto_scrape = not args.proxy_pool

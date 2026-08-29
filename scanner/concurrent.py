@@ -1,3 +1,4 @@
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, parse_qs
@@ -18,7 +19,7 @@ class ConcurrentCrawler:
         self.config = session.config
         self.visited = set()
         self.scope_domain = urlparse(self.config.target).netloc
-        self._lock = __import__("threading").Lock()
+        self._lock = threading.Lock()
         self._total_urls = 0
 
     def crawl(self):
