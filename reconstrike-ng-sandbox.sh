@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────
-# ReconStrike Sandbox Launcher
-# Runs ReconStrike in a hardened Docker container with:
+# ReconStrike-ng Sandbox Launcher
+# Runs ReconStrike-ng in a hardened Docker container with:
 #   - No host filesystem access
 #   - No host network access (isolated network namespace)
 #   - No privilege escalation possible
@@ -15,9 +15,9 @@
 
 set -euo pipefail
 
-IMAGE_NAME="reconstrike-sandbox"
-CONTAINER_NAME="reconstrike-run-$$"
-OUTPUT_DIR="${RECONSTRIKE_OUTPUT:-$(pwd)/reconstrike-output}"
+IMAGE_NAME="reconstrike-ng-sandbox"
+CONTAINER_NAME="reconstrike-ng-run-$$"
+OUTPUT_DIR="${RECONSTRIKE_OUTPUT:-$(pwd)/reconstrike-ng-output}"
 
 # ── Colors ───────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -29,7 +29,7 @@ NC='\033[0m'
 print_banner() {
     echo -e "${CYAN}"
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║       ReconStrike — Sandboxed Execution Environment     ║"
+    echo "║      ReconStrike-ng — Sandboxed Execution Environment    ║"
     echo "║       Complete isolation from host system                ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -115,7 +115,7 @@ run_sandboxed() {
         \
         `# ── WRITABLE TMPFS FOR TEMP FILES ──` \
         --tmpfs /tmp:rw,noexec,nosuid,size=100m \
-        --tmpfs /app/.reconstrike:rw,noexec,nosuid,size=50m \
+        --tmpfs /app/.reconstrike-ng:rw,noexec,nosuid,size=50m \
         \
         `# ── OUTPUT VOLUME (only dir accessible from host) ──` \
         -v "$OUTPUT_DIR:/app/output:rw" \
@@ -130,7 +130,7 @@ run_sandboxed() {
         --user scanner \
         \
         `# ── AUTO-CLEANUP ──` \
-        --label "reconstrike=sandbox" \
+        --label "reconstrike-ng=sandbox" \
         \
         "$IMAGE_NAME" \
         -o /app/output/report.html \

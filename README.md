@@ -71,12 +71,12 @@ sudo apt install docker.io   # if not already installed
 
 ```bash
 # Quick scan (sandboxed)
-./reconstrike-sandbox.sh -t https://target.com --profile quick
+./reconstrike-ng-sandbox.sh -t https://target.com --profile quick
 
 # Deep scan with Tor (sandboxed)
-./reconstrike-sandbox.sh -t https://target.com --tor --rotate-ua --profile deep
+./reconstrike-ng-sandbox.sh -t https://target.com --tor --rotate-ua --profile deep
 
-# Reports save to ./reconstrike-output/
+# Reports save to ./reconstrike-ng-output/
 ```
 
 The sandbox automatically:
