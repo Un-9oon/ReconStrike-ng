@@ -35,6 +35,23 @@ class VulnerableHandler(BaseHTTPRequestHandler):
                 {"id": 1, "name": "alice", "email": "alice@example.com"},
                 {"id": 2, "name": "bob", "email": "bob@example.com"},
             ])
+        elif path == "/idor-test":
+            # Returns different user data per id — the exact IDOR crash trigger.
+            # ID 1 → alice's data (with PII); ID 2 → bob's data (different PII).
+            # This forces _responses_differ_meaningfully() to return True, which
+            # is where the original build_curl(url) crash fires.
+            uid = params.get("id", ["0"])[0]
+            users = {
+                "1": {"id": 1, "name": "alice", "email": "alice@example.com",
+                      "phone": "555-867-5309", "balance": "$1234.56"},
+                "2": {"id": 2, "name": "bob", "email": "bob@corp.example.com",
+                      "phone": "555-999-0000", "balance": "$9999.00",
+                      "ssn": "123-45-6789"},
+            }
+            if uid in users:
+                self._send_json(200, users[uid])
+            else:
+                self._send_json(404, {"error": "not found"})
         else:
             self._send_html(404, "<html><body><h1>404 Not Found</h1></body></html>")
 

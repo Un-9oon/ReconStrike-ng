@@ -57,7 +57,7 @@ def _check_param(session: ScanSession, url: str, param: str, original: str):
                 if not re.search(indicator, baseline, re.IGNORECASE):
                     severity = Severity.CRITICAL if ("169.254" in entry["payload"] or "metadata" in entry["payload"] or "file:///" in entry["payload"]) else Severity.HIGH
 
-                    curl_cmd = build_curl(test_url)
+                    curl_cmd = build_curl("GET", test_url)
                     session.add_finding(Finding(
                         title="Server-Side Request Forgery (SSRF)",
                         severity=severity,
@@ -146,7 +146,7 @@ def _check_param(session: ScanSession, url: str, param: str, original: str):
             location=f"URL parameter '{param}' in {parsed.path}",
             parameter=param,
             payload="http://10.255.255.1",
-            curl_command=build_curl(test_url),
+            curl_command=build_curl("GET", test_url),
             developer_fix="Validate destination URLs against an allowlist and block private IP ranges before making requests.",
             references="https://owasp.org/www-community/attacks/Server_Side_Request_Forgery",
             detection_method="Injected internal URLs (127.0.0.1, 169.254.169.254 metadata, internal hostnames) into parameters likely to fetch remote resources. Checked responses for internal service signatures or cloud metadata content not present in baseline.",

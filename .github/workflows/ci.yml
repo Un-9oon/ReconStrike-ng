@@ -24,8 +24,10 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov
           pip list
-      - name: Run tests
-        run: python -m pytest --cov=scanner --cov-report=xml -v --tb=long 2>&1 || { echo "::error::Tests failed"; python -m pytest --co -q 2>&1; exit 1; }
+      - name: Run unit tests with coverage
+        run: |
+          python -m pytest --cov=scanner --cov-report=xml --cov-fail-under=70 \
+            -v --tb=long 2>&1 || { echo "::error::Tests failed"; exit 1; }
 
   lint:
     runs-on: ubuntu-latest
@@ -36,3 +38,51 @@ jobs:
           python-version: "3.12"
       - run: pip install flake8
       - run: flake8 scanner/ reconstrike_ng.py --max-line-length=120 --ignore=E501,W503,W504,E303,E302
+
+  integration:
+    name: Integration (full-profile subprocess)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Start vulnerable test fixture
+        run: |
+          python tests/fixtures/vulnapp.py &
+          echo $! > /tmp/vulnapp.pid
+          sleep 2
+          curl -sf http://127.0.0.1:15789/ || { echo "vulnapp failed to start"; exit 1; }
+      - name: Run --profile standard (catches crash bugs like idor.py)
+        run: |
+          python reconstrike_ng.py -t http://127.0.0.1:15789 \
+            --profile standard --no-ssl-verify --timeout 5 \
+            --quiet --json-file /tmp/scan-standard.json 2>&1 | tee /tmp/scan-standard.log
+          if grep -q "Traceback (most recent call last)" /tmp/scan-standard.log; then
+            echo "::error::Traceback in standard profile — a module crashed"
+            exit 1
+          fi
+      - name: Run --profile owasp
+        run: |
+          python reconstrike_ng.py -t http://127.0.0.1:15789 \
+            --profile owasp --no-ssl-verify --timeout 5 \
+            --quiet --json-file /tmp/scan-owasp.json 2>&1 | tee /tmp/scan-owasp.log
+          if grep -q "Traceback (most recent call last)" /tmp/scan-owasp.log; then
+            echo "::error::Traceback in owasp profile — a module crashed"
+            exit 1
+          fi
+      - name: Verify JSON output parseable
+        run: |
+          python -c "
+          import json
+          for path in ['/tmp/scan-standard.json', '/tmp/scan-owasp.json']:
+              d = json.load(open(path))
+              assert 'findings' in d, f'missing findings key in {path}'
+              assert 'urls_scanned' in d, f'missing urls_scanned key in {path}'
+          print('JSON output OK')
+          "
+      - name: Stop vulnapp
+        if: always()
+        run: kill \$(cat /tmp/vulnapp.pid) 2>/dev/null || true

@@ -66,6 +66,12 @@ class ANMConfig:
     max_rotations_per_scan: int = 50
     block_threshold: int = 3
     fail_threshold: int = 5
+    # Gap 6: operator MUST acknowledge authorization for high-impact rotation.
+    # Set via --authorized-target on the CLI.  Without this:
+    #   - MAC rotation (--rotate-mac) is disabled
+    #   - IP rotation via Tor / proxy pool is disabled
+    #   - UA rotation remains enabled (cosmetic only, low risk)
+    authorized_target: str = ""
 
 
 # WAF evasion header sets -- randomised to defeat header fingerprinting
@@ -314,7 +320,36 @@ def _restore_mac_address(interface: str, original_mac: str) -> bool:
 
 
 class IdentityManager:
-    """Orchestrates runtime identity rotation for evasion resilience. Thread-safe."""
+    """Orchestrates runtime identity rotation for evasion resilience. Thread-safe.
+
+    Authorization gate (Gap 6)
+    --------------------------
+    High-impact rotation (MAC address, Tor exit, proxy-pool IP) modifies
+    network-layer identity.  This can constitute unauthorized access against
+    targets you don't own.  Therefore:
+
+      * rotate_mac   }  Silently DISABLED unless config.authorized_target is set.
+      * use_tor      }  Set it via --authorized-target <URL> to confirm you hold
+      * proxy_pool   }  written permission to test the target.
+
+    UA rotation is cosmetic (HTTP header only) and is NOT gated.
+    """
+
+    _AUTH_WARNING = (
+        "\n"
+        "  ╔══════════════════════════════════════════════════════════════════╗\n"
+        "  ║  ANM SECURITY WARNING — AUTHORIZATION REQUIRED                  ║\n"
+        "  ║                                                                  ║\n"
+        "  ║  MAC / IP identity rotation modifies your network-layer identity ║\n"
+        "  ║  and may constitute unauthorized network impersonation if used   ║\n"
+        "  ║  against targets you do not own.                                 ║\n"
+        "  ║                                                                  ║\n"
+        "  ║  To enable, add:  --authorized-target <target-url>              ║\n"
+        "  ║  This confirms you hold written permission to test that target.  ║\n"
+        "  ║                                                                  ║\n"
+        "  ║  MAC/IP rotation has been DISABLED for this scan.               ║\n"
+        "  ╚══════════════════════════════════════════════════════════════════╝\n"
+    )
 
     def __init__(self, config: ANMConfig):
         self.config = config
@@ -326,6 +361,32 @@ class IdentityManager:
         self._fail_counter = 0
         self._rotation_history: list[dict] = []
         self._shutting_down = False
+
+        # ── Authorization gate ──────────────────────────────────────────────
+        # High-impact rotations require --authorized-target to be set.
+        # UA rotation is cosmetic; always allowed.
+        self._high_impact_authorized = bool(config.authorized_target)
+        if not self._high_impact_authorized:
+            if config.rotate_mac or config.use_tor or config.proxy_pool_file:
+                logger.warning(self._AUTH_WARNING)
+            if config.rotate_mac:
+                logger.warning("ANM: --rotate-mac DISABLED (missing --authorized-target)")
+                config.rotate_mac = False
+            if config.use_tor:
+                logger.warning("ANM: --tor DISABLED (missing --authorized-target)")
+                config.use_tor = False
+            if config.proxy_pool_file or config.proxy_pool:
+                logger.warning("ANM: proxy-pool IP rotation DISABLED (missing --authorized-target)")
+                config.proxy_pool_file = ""
+                config.proxy_pool = []
+            if config.dhcp_renewal:
+                config.dhcp_renewal = False  # also silently gate DHCP lease renewal
+        else:
+            logger.info(
+                "ANM: Authorization confirmed for target: %s",
+                config.authorized_target,
+            )
+        # ────────────────────────────────────────────────────────────────────
 
         if config.proxy_pool_file and os.path.isfile(config.proxy_pool_file):
             self._load_proxy_pool(config.proxy_pool_file)

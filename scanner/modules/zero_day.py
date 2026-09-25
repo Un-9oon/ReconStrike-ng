@@ -93,9 +93,33 @@ STACK_TRACE_PATTERNS = [
 ]
 
 
+# Minimum number of independently-triggering payloads required before a
+# finding is emitted.  Keeps single-signal noise out of the main report.
+# Overridable per scan via session.config._zero_day_min_signals (set by CLI).
+_DEFAULT_MIN_SIGNALS = 2
+
+
 def _build_curl(method: str, url: str, data: str = None, headers: dict = None) -> str:
     from scanner.core import build_curl
     return build_curl(method, url, headers=headers, data=data)
+
+
+def _resp_text(resp) -> str:
+    """Safely decode a response body, replacing un-decodable bytes.
+
+    `resp.text` raises UnicodeDecodeError when the server returns binary
+    content (e.g. a payload triggers a binary 500 error page on some stacks).
+    This helper never raises.
+    """
+    if resp is None:
+        return ""
+    try:
+        return resp.text
+    except (UnicodeDecodeError, LookupError):
+        try:
+            return resp.content.decode("utf-8", errors="replace")
+        except Exception:
+            return ""
 
 
 def _get_baseline(session: ScanSession, url: str) -> dict:
@@ -104,11 +128,12 @@ def _get_baseline(session: ScanSession, url: str) -> dict:
     elapsed = time.time() - start
     if resp is None:
         return {"status": None, "size": 0, "time": elapsed, "body": ""}
+    body = _resp_text(resp)
     return {
         "status": resp.status_code,
-        "size": len(resp.text),
+        "size": len(body),
         "time": elapsed,
-        "body": resp.text,
+        "body": body,
     }
 
 
@@ -129,7 +154,8 @@ def _analyze_response(resp, elapsed: float, baseline: dict, payload: str, catego
             f"({elapsed / baseline['time']:.1f}x slower)"
         )
 
-    resp_size = len(resp.text)
+    resp_text_safe = _resp_text(resp)
+    resp_size = len(resp_text_safe)
     if baseline["size"] > 100:
         if resp_size > baseline["size"] * 3:
             anomalies.append(
@@ -143,12 +169,12 @@ def _analyze_response(resp, elapsed: float, baseline: dict, payload: str, catego
             )
 
     for pattern, crash_type in CRASH_INDICATORS:
-        if re.search(pattern, resp.text, re.IGNORECASE):
-            anomalies.append(f"Crash indicator ({crash_type}): {_extract_snippet(resp.text, pattern)}")
+        if re.search(pattern, _resp_text(resp), re.IGNORECASE):
+            anomalies.append(f"Crash indicator ({crash_type}): {_extract_snippet(_resp_text(resp), pattern)}")
 
     for pattern in STACK_TRACE_PATTERNS:
-        if re.search(pattern, resp.text):
-            anomalies.append(f"Stack trace leaked: {_extract_snippet(resp.text, pattern)}")
+        if re.search(pattern, _resp_text(resp)):
+            anomalies.append(f"Stack trace leaked: {_extract_snippet(_resp_text(resp), pattern)}")
             break
 
     return anomalies
@@ -164,14 +190,19 @@ def _extract_snippet(body: str, pattern: str, context: int = 80) -> str:
     return snippet[:200] + "..." if len(snippet) > 200 else snippet
 
 
-def _fuzz_url_params(session: ScanSession, url: str, baseline: dict) -> None:
+def _fuzz_url_params(session: ScanSession, url: str, baseline: dict, min_signals: int = _DEFAULT_MIN_SIGNALS) -> None:
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     if not params:
         return
 
     for param_name, original_values in params.items():
+        # Accumulate anomalies per category before deciding to emit a finding.
+        # Key: category str → list of (payload, anomalies, resp, elapsed)
+        category_hits: dict = {}
+
         for category, payloads in FUZZ_PAYLOADS.items():
+            hits_for_cat = []
             for payload in payloads:
                 test_params = dict(params)
                 test_params[param_name] = [payload]
@@ -183,21 +214,31 @@ def _fuzz_url_params(session: ScanSession, url: str, baseline: dict) -> None:
 
                 anomalies = _analyze_response(resp, elapsed, baseline, payload, category)
                 if anomalies:
-                    _report_anomaly(
-                        session=session,
-                        url=test_url,
-                        param=param_name,
-                        payload=payload,
-                        category=category,
-                        anomalies=anomalies,
-                        baseline=baseline,
-                        resp=resp,
-                        elapsed=elapsed,
-                        method="GET",
-                    )
+                    hits_for_cat.append((test_url, payload, anomalies, resp, elapsed))
+
+            if len(hits_for_cat) >= min_signals:
+                category_hits[category] = hits_for_cat
+
+        for category, hits in category_hits.items():
+            # Emit one consolidated finding per (param, category)
+            all_anomalies = [a for _, _, anoms, _, _ in hits for a in anoms]
+            representative_url, representative_payload, _, representative_resp, representative_elapsed = hits[0]
+            _report_anomaly(
+                session=session,
+                url=representative_url,
+                param=param_name,
+                payload=representative_payload,
+                category=category,
+                anomalies=all_anomalies,
+                baseline=baseline,
+                resp=representative_resp,
+                elapsed=representative_elapsed,
+                method="GET",
+                triggering_count=len(hits),
+            )
 
 
-def _fuzz_form_fields(session: ScanSession, baseline: dict) -> None:
+def _fuzz_form_fields(session: ScanSession, baseline: dict, min_signals: int = _DEFAULT_MIN_SIGNALS) -> None:
     if not session.forms:
         return
 
@@ -214,6 +255,7 @@ def _fuzz_form_fields(session: ScanSession, baseline: dict) -> None:
                 continue
 
             for category, payloads in FUZZ_PAYLOADS.items():
+                hits_for_cat = []
                 for payload in payloads:
                     form_data = {}
                     for other_inp in inputs:
@@ -233,19 +275,25 @@ def _fuzz_form_fields(session: ScanSession, baseline: dict) -> None:
 
                     anomalies = _analyze_response(resp, elapsed, baseline, payload, category)
                     if anomalies:
-                        _report_anomaly(
-                            session=session,
-                            url=test_url,
-                            param=field_name,
-                            payload=payload,
-                            category=category,
-                            anomalies=anomalies,
-                            baseline=baseline,
-                            resp=resp,
-                            elapsed=elapsed,
-                            method=method,
-                            form_data=form_data,
-                        )
+                        hits_for_cat.append((test_url, payload, form_data, anomalies, resp, elapsed))
+
+                if len(hits_for_cat) >= min_signals:
+                    test_url, payload, form_data, anoms, resp, elapsed = hits_for_cat[0]
+                    all_anomalies = [a for _, _, _, a_list, _, _ in hits_for_cat for a in a_list]
+                    _report_anomaly(
+                        session=session,
+                        url=test_url,
+                        param=field_name,
+                        payload=payload,
+                        category=category,
+                        anomalies=all_anomalies,
+                        baseline=baseline,
+                        resp=resp,
+                        elapsed=elapsed,
+                        method=method,
+                        form_data=form_data,
+                        triggering_count=len(hits_for_cat),
+                    )
 
 
 def _test_method_confusion(session: ScanSession, baseline: dict) -> None:
@@ -269,11 +317,11 @@ def _test_method_confusion(session: ScanSession, baseline: dict) -> None:
         if resp.status_code >= 500:
             anomalies.append(f"Server error {resp.status_code} on {method} method")
 
-        if method == "TRACE" and resp.status_code == 200 and "TRACE" in resp.text:
+        if method == "TRACE" and resp.status_code == 200 and "TRACE" in _resp_text(resp):
             anomalies.append("TRACE method reflects request back (Cross-Site Tracing risk)")
 
         for pattern, crash_type in CRASH_INDICATORS:
-            if re.search(pattern, resp.text, re.IGNORECASE):
+            if re.search(pattern, _resp_text(resp), re.IGNORECASE):
                 anomalies.append(f"Crash indicator on {method}: {crash_type}")
 
         if anomalies:
@@ -332,8 +380,9 @@ def _report_anomaly(
     elapsed: float,
     method: str = "GET",
     form_data: dict = None,
+    triggering_count: int = 1,
 ) -> None:
-    anomaly_str = "; ".join(anomalies)
+    anomaly_str = "; ".join(dict.fromkeys(anomalies))  # deduplicate while preserving order
     payload_display = payload if len(payload) <= 100 else payload[:100] + f"... ({len(payload)} chars)"
 
     baseline_summary = (
@@ -342,7 +391,7 @@ def _report_anomaly(
     )
     fuzzed_summary = (
         f"Status: {resp.status_code if resp else 'N/A'}, "
-        f"Size: {len(resp.text) if resp else 'N/A'} bytes, "
+        f"Size: {len(_resp_text(resp)) if resp else 'N/A'} bytes, "
         f"Time: {elapsed:.2f}s"
     )
 
@@ -353,14 +402,15 @@ def _report_anomaly(
         severity=Severity.MEDIUM,
         description=(
             f"Differential analysis detected anomalous behavior when fuzzing parameter '{param}' "
-            f"with {category.replace('_', ' ')} payload. "
+            f"with {category.replace('_', ' ')} payloads ({triggering_count} independent signals). "
             f"Anomalies: {anomaly_str}. "
             f"This may indicate an unpatched vulnerability, improper input validation, "
             f"or an exploitable edge case that warrants manual investigation."
         ),
         evidence=(
             f"Payload category: {category}\n"
-            f"Payload: {payload_display}\n"
+            f"Representative payload: {payload_display}\n"
+            f"Independent triggering payloads: {triggering_count}\n"
             f"Baseline: {baseline_summary}\n"
             f"Fuzzed:   {fuzzed_summary}\n"
             f"Anomalies: {anomaly_str}"
@@ -382,7 +432,8 @@ def _report_anomaly(
         response_status=resp.status_code if resp else 0,
         detection_method=(
             f"Intelligent fuzzing with {category} payloads and differential analysis "
-            f"against baseline response"
+            f"against baseline response; {triggering_count} of {len(FUZZ_PAYLOADS[category])} "
+            f"payloads in this category triggered anomalies"
         ),
         curl_command=_build_curl(method, url, data=data_arg),
         reproduction_steps=(
@@ -414,6 +465,9 @@ def _report_anomaly(
 def run(session: ScanSession) -> None:
     logger.info(f"\n[⚡] Running Zero-Day Heuristics (Intelligent Fuzzing)...")
 
+    # Respect --zero-day-sensitivity if the CLI set it on the session config
+    min_signals = getattr(session.config, "_zero_day_min_signals", _DEFAULT_MIN_SIGNALS)
+
     target = session.config.target
 
     logger.info(f" ▸ Establishing baseline response...")
@@ -422,8 +476,9 @@ def run(session: ScanSession) -> None:
         logger.warning(f" ✗ Could not establish baseline, skipping zero-day heuristics.")
         return
     logger.info(
-        "✓ Baseline established: status=%s, size=%d bytes, time=%.2fs",
-        baseline['status'], baseline['size'], baseline['time']
+        "✓ Baseline established: status=%s, size=%d bytes, time=%.2fs "
+        "(min_signals threshold: %d)",
+        baseline['status'], baseline['size'], baseline['time'], min_signals
     )
 
     logger.info(f" ▸ Phase 1: Fuzzing URL parameters...")
@@ -432,7 +487,7 @@ def run(session: ScanSession) -> None:
         parsed = urlparse(url)
         if parsed.query and url not in fuzzed_urls:
             fuzzed_urls.add(url)
-            _fuzz_url_params(session, url, baseline)
+            _fuzz_url_params(session, url, baseline, min_signals=min_signals)
             if len(fuzzed_urls) >= 10:
                 break
 
@@ -443,11 +498,11 @@ def run(session: ScanSession) -> None:
             test_url = f"{target}?{param}=1"
             test_baseline = _get_baseline(session, test_url)
             if test_baseline["status"] and test_baseline["status"] < 404:
-                _fuzz_url_params(session, test_url, test_baseline)
+                _fuzz_url_params(session, test_url, test_baseline, min_signals=min_signals)
                 break
 
     logger.info(f" ▸ Phase 2: Fuzzing form fields...")
-    _fuzz_form_fields(session, baseline)
+    _fuzz_form_fields(session, baseline, min_signals=min_signals)
 
     logger.info(f" ▸ Phase 3: Testing HTTP method confusion...")
     _test_method_confusion(session, baseline)

@@ -120,6 +120,12 @@ class ScanConfig:
     scope_include: str = ""
     scope_exclude: str = ""
     anm_config: ANMConfig = field(default_factory=ANMConfig)
+    # Gap 2: operator-supplied seed URLs for unlinked endpoints
+    extra_urls: list = field(default_factory=list)
+    # Gap 3: minimum independent payload hits before emitting a zero-day finding
+    _zero_day_min_signals: int = 2
+    # Gap 6: operator must set this to enable high-impact ANM rotation
+    authorized_target: str = ""
 
 
 MAX_RESPONSE_SIZE = 10 * 1024 * 1024

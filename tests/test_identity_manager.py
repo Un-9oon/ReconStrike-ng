@@ -100,7 +100,10 @@ class TestIdentityManagerInit(unittest.TestCase):
             f.write("proxy3:3128\n")
             f.name
         try:
-            cfg = ANMConfig(enabled=True, proxy_pool_file=f.name)
+            cfg = ANMConfig(
+                enabled=True, proxy_pool_file=f.name,
+                authorized_target="http://authorized-test.local",
+            )
             mgr = IdentityManager(cfg)
             self.assertEqual(len(cfg.proxy_pool), 3)
             self.assertEqual(cfg.proxy_pool[0], "http://proxy1:8080")
@@ -110,7 +113,10 @@ class TestIdentityManagerInit(unittest.TestCase):
             os.unlink(f.name)
 
     def test_proxy_pool_missing_file(self):
-        cfg = ANMConfig(enabled=True, proxy_pool_file="/nonexistent/proxy_list.txt")
+        cfg = ANMConfig(
+            enabled=True, proxy_pool_file="/nonexistent/proxy_list.txt",
+            authorized_target="http://authorized-test.local",
+        )
         mgr = IdentityManager(cfg)
         self.assertEqual(len(cfg.proxy_pool), 0)
 
@@ -148,6 +154,7 @@ class TestProxyPoolRotation(unittest.TestCase):
             enabled=True,
             proxy_pool=["http://p1:8080", "http://p2:8080", "http://p3:8080"],
             min_rotation_interval=0,
+            authorized_target="http://authorized-test.local",
         )
         mgr = IdentityManager(cfg)
 
@@ -440,6 +447,7 @@ class TestFallbackChain(unittest.TestCase):
             enabled=True, use_tor=True, rotate_ua=True,
             proxy_pool=["http://p1:8080"],
             min_rotation_interval=0, cooldown_after_block=0,
+            authorized_target="http://authorized-test.local",
         )
         mgr = IdentityManager(cfg)
 
@@ -470,6 +478,7 @@ class TestFallbackChain(unittest.TestCase):
         cfg = ANMConfig(
             enabled=True, auto_scrape_proxies=True, dhcp_renewal=True,
             min_rotation_interval=0, cooldown_after_block=0,
+            authorized_target="http://authorized-test.local",
         )
         mgr = IdentityManager(cfg)
         result = mgr._rotate_ip()
@@ -500,6 +509,7 @@ class TestCombinedBanScenario(unittest.TestCase):
             network_interface="fake0",
             proxy_pool=["http://p1:8080", "http://p2:8080"],
             fail_threshold=1, min_rotation_interval=0, cooldown_after_block=0,
+            authorized_target="http://authorized-test.local",
         )
         mgr = IdentityManager(cfg)
 

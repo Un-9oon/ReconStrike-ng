@@ -224,6 +224,21 @@ Examples:
     stealth_group.add_argument("--stealth-speed", choices=["slow", "normal", "fast"], default="normal",
                                help="Stealth timing: slow (3-12s gaps), normal (1-5s), fast (0.3-2s)")
 
+    parser.add_argument("--extra-urls", "--seed-urls",
+                        help="File or comma-separated list of additional URLs to include in the scan "
+                             "(covers unlinked endpoints the crawler won't discover automatically)")
+    parser.add_argument("--zero-day-sensitivity", choices=["low", "medium", "high"], default="medium",
+                        help="Zero-day heuristic noise vs recall: low=4 signals, medium=2 (default), high=1")
+    parser.add_argument(
+        "--authorized-target",
+        metavar="URL",
+        default="",
+        help=(
+            "REQUIRED to enable high-impact ANM features (--rotate-mac, --tor, --proxy-pool). "
+            "Provide the target URL to confirm you hold written authorization to test it. "
+            "Without this flag, MAC/IP rotation is disabled and only UA rotation is permitted."
+        ),
+    )
     parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output (findings only)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
@@ -503,6 +518,28 @@ def main():
         cooldown_after_block=args.anm_cooldown,
         max_rotations_per_scan=args.anm_max_rotations,
         auto_scrape_proxies=auto_scrape,
+        authorized_target=getattr(args, "authorized_target", "") or "",
+    )
+
+    # Parse --extra-urls: accept a file path or comma-separated URLs
+    extra_urls = []
+    if hasattr(args, "extra_urls") and args.extra_urls:
+        val = args.extra_urls
+        if os.path.isfile(val):
+            try:
+                with open(val) as f:
+                    extra_urls = [line.strip() for line in f if line.strip()]
+            except OSError as e:
+                logger.error("Cannot read --extra-urls file %s: %s", val, e)
+        else:
+            extra_urls = [u.strip() for u in val.split(",") if u.strip()]
+        if extra_urls and not args.quiet:
+            logger.info("Extra URLs  : %d operator-supplied seeds", len(extra_urls))
+
+    # Translate --zero-day-sensitivity to min_signals
+    _zd_sensitivity_map = {"low": 4, "medium": 2, "high": 1}
+    zero_day_min_signals = _zd_sensitivity_map.get(
+        getattr(args, "zero_day_sensitivity", "medium"), 2
     )
 
     config = ScanConfig(
@@ -515,6 +552,9 @@ def main():
         proxy=args.proxy or "", rate_limit=args.rate_limit,
         scope_include=args.scope_include or "", scope_exclude=args.scope_exclude or "",
         anm_config=anm_cfg,
+        extra_urls=extra_urls,
+        _zero_day_min_signals=zero_day_min_signals,
+        authorized_target=getattr(args, "authorized_target", "") or "",
     )
 
     session = ScanSession(config)
@@ -585,6 +625,16 @@ def main():
 
         crawler = ConcurrentCrawler(session)
         crawler.crawl()
+
+        if not args.quiet:
+            cov = getattr(session, "coverage_report", {})
+            logger.info(
+                "Coverage   : %d URLs | %d forms | %d wordlist routes probed%s",
+                cov.get("urls_discovered", len(session.crawled_urls)),
+                cov.get("forms_found", len(session.forms)),
+                cov.get("wordlist_routes_probed", 0),
+                f" | {cov['extra_seeds_supplied']} operator seeds" if cov.get("extra_seeds_supplied") else "",
+            )
 
         if not args.quiet:
             logger.info("=" * 60)

@@ -74,8 +74,8 @@ def _check_param_idor(session, url, param, original):
     if not _responses_differ_meaningfully(resp_original.text, resp.text):
         return
 
-    curl_original = build_curl(url)
-    curl_test = build_curl(test_url)
+    curl_original = build_curl("GET", url)
+    curl_test = build_curl("GET", test_url)
 
     if _contains_pii(resp.text) and not _contains_pii(resp_original.text):
         session.add_finding(Finding(
