@@ -9,23 +9,65 @@ SKIP_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".css",
             ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3", ".pdf")
 
 # Common application routes tried during wordlist-based endpoint discovery.
-# These are added to the crawl queue regardless of whether HTML links them.
+# Subset of SecLists common-and-interesting-paths. Extend via --wordlist.
 COMMON_ROUTES = [
-    "/admin", "/admin/", "/dashboard", "/dashboard/",
-    "/login", "/login/", "/logout",
+    # Admin / auth
+    "/admin", "/admin/", "/admin/login", "/dashboard", "/dashboard/",
+    "/login", "/login/", "/logout", "/signin", "/signout",
     "/register", "/signup",
-    "/api", "/api/v1", "/api/v2", "/api/v3",
-    "/api/users", "/api/user", "/api/me",
-    "/api/health", "/api/status",
-    "/settings", "/profile", "/account",
-    "/upload", "/uploads",
-    "/reset-password", "/forgot-password",
-    "/graphql", "/graphiql",
+    # API paths
+    "/api", "/api/v1", "/api/v2", "/api/v3", "/api/v4",
+    "/api/users", "/api/user", "/api/me", "/api/admin",
+    "/api/health", "/api/status", "/api/config", "/api/debug",
+    "/api/tokens", "/api/keys", "/api/export",
+    # Account management
+    "/settings", "/profile", "/account", "/preferences",
+    "/reset-password", "/forgot-password", "/change-password",
+    # File operations
+    "/upload", "/uploads", "/files", "/download",
+    "/backup", "/backup.zip", "/backup.tar.gz",
+    # API docs
+    "/graphql", "/graphiql", "/graphql/console",
     "/swagger", "/swagger-ui", "/swagger.json", "/openapi.json",
-    "/redoc", "/docs",
-    "/.env", "/.git/config", "/config",
+    "/redoc", "/docs", "/api-docs",
+    # Common sensitive files
+    "/.env", "/.env.local", "/.env.production", "/.env.backup",
+    "/.git/config", "/.git/HEAD", "/.svn/entries",
+    "/config", "/config.php", "/config.json", "/config.yml",
+    "/web.config", "/app.config",
     "/robots.txt", "/sitemap.xml",
+    # Debug / monitoring
+    "/server-status", "/server-info",
+    "/phpinfo.php", "/info.php", "/test.php",
+    "/actuator", "/actuator/env", "/actuator/health", "/actuator/mappings",
+    "/health", "/status", "/metrics", "/debug",
+    # Misc
+    "/console", "/shell", "/terminal",
+    "/wp-admin", "/wp-login.php", "/xmlrpc.php",
+    "/phpmyadmin", "/adminer.php",
 ]
+
+# Maximum number of redirect hops to follow during crawling.
+# Prevents redirect-chain crawler traps (A→B→C→...→A loops).
+_MAX_REDIRECT_DEPTH = 5
+
+
+def load_wordlist(path: str) -> list[str]:
+    """Load routes from a wordlist file (one path per line, # = comment)."""
+    routes = []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if not line.startswith("/"):
+                    line = "/" + line
+                routes.append(line)
+        logger.info("Wordlist: loaded %d routes from %s", len(routes), path)
+    except (OSError, IOError) as exc:
+        logger.error("Wordlist: cannot read %s — %s", path, exc)
+    return routes
 
 
 def extract_forms(html: str, base_url: str) -> list[dict]:
@@ -92,9 +134,17 @@ class Crawler:
         self.session = scan_session
         self.config = scan_session.config
         self.visited = set()
+        self.session.coverage_report = {}
         self.scope_domain = urlparse(self.config.target).netloc
         # Extra seed URLs supplied by the operator (--extra-urls / --seed-urls)
         self._extra_seeds: list = list(getattr(self.config, "extra_urls", []) or [])
+        # Wordlist: operator-supplied file overrides the built-in COMMON_ROUTES
+        self._wordlist: list = COMMON_ROUTES
+        wl_path = getattr(self.config, "wordlist_file", "") or ""
+        if wl_path:
+            loaded = load_wordlist(wl_path)
+            if loaded:
+                self._wordlist = loaded
 
     def crawl(self) -> None:
         logger.info("Starting crawler on %s", self.config.target)
@@ -118,25 +168,45 @@ class Crawler:
         )
 
         # Attach a coverage report to the session for use by reporters
-        self.session.coverage_report = {
+        self.session.coverage_report.update({
             "urls_discovered": len(self.session.crawled_urls),
             "forms_found": len(self.session.forms),
             "extra_seeds_supplied": len(self._extra_seeds),
             "wordlist_routes_probed": len(COMMON_ROUTES),
-        }
+        })
 
-    def _crawl_url(self, url: str, depth: int) -> None:
+    def _crawl_url(self, url: str, depth: int, _redirect_depth: int = 0) -> None:
         if depth > self.config.depth:
+            return
+        if _redirect_depth > _MAX_REDIRECT_DEPTH:
+            logger.debug("Crawler: redirect chain depth exceeded at %s — skipping (trap guard)", url)
             return
         normalized = self._normalize(url)
         if normalized in self.visited:
             return
         self.visited.add(normalized)
 
-        resp = self.session.get(url)
+        resp = self.session.get(url, allow_redirects=False)
         if not resp:
             return
 
+        # Follow redirects manually so we can detect out-of-scope hops
+        if resp.status_code in (301, 302, 303, 307, 308):
+            location = resp.headers.get("Location", "")
+            if not location:
+                return
+            next_url = urljoin(url, location)
+            next_host = urlparse(next_url).netloc
+            if next_host and next_host != self.scope_domain:
+                logger.warning(
+                    "Crawler: redirect to out-of-scope host detected: %s → %s "
+                    "(authorized target: %s). Stopping redirect chain.",
+                    url, next_url, self.scope_domain,
+                )
+                return
+            return self._crawl_url(next_url, depth, _redirect_depth + 1)
+
+        # Record this URL
         self.session.crawled_urls.add(url)
         content_type = resp.headers.get("Content-Type", "")
         if "text/html" not in content_type and "application/xhtml" not in content_type:
@@ -231,12 +301,23 @@ class Crawler:
         """Probe common application routes not necessarily linked from HTML."""
         base = self.config.target.rstrip("/")
         newly_found = 0
-        for route in COMMON_ROUTES:
+        for route in self._wordlist:
             candidate = base + route
             normalized = self._normalize(candidate)
             if normalized in self.visited:
                 continue
-            resp = self.session.get(candidate)
+            resp = self.session.get(candidate, allow_redirects=False)
+            if not resp:
+                continue
+            # Follow a single redirect only if it stays in scope
+            if resp.status_code in (301, 302, 303, 307, 308):
+                location = resp.headers.get("Location", "")
+                if location:
+                    next_url = urljoin(candidate, location)
+                    if urlparse(next_url).netloc == self.scope_domain:
+                        resp = self.session.get(next_url)
+                    else:
+                        resp = None
             if resp and resp.status_code not in (404, 410):
                 self.session.crawled_urls.add(candidate)
                 self.visited.add(normalized)
@@ -256,3 +337,8 @@ class Crawler:
                 "Wordlist discovery: found %d additional live routes (not linked from HTML)",
                 newly_found
             )
+        # Report which wordlist was used
+        self.session.coverage_report["wordlist_routes_probed"] = len(self._wordlist)
+        wl_path = getattr(self.config, "wordlist_file", "") or ""
+        if wl_path:
+            self.session.coverage_report["wordlist_file"] = wl_path

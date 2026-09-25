@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from colorama import Fore, Style, init as colorama_init
 
 from scanner.log import setup_logging, logger
-from scanner.core import ScanConfig, ScanSession, Severity, Finding
+from scanner.core import ScanConfig, ScanSession, Severity, Finding, run_module_with_timeout
 from scanner.identity_manager import ANMConfig
 from scanner.concurrent import ConcurrentCrawler
 from scanner.reporter import generate_html_report, print_summary
@@ -227,6 +227,11 @@ Examples:
     parser.add_argument("--extra-urls", "--seed-urls",
                         help="File or comma-separated list of additional URLs to include in the scan "
                              "(covers unlinked endpoints the crawler won't discover automatically)")
+    parser.add_argument("--wordlist",
+                        metavar="FILE",
+                        help="Path to a wordlist file (one path per line) for active route discovery. "
+                             "Replaces the built-in COMMON_ROUTES list. Use a SecLists subset for "
+                             "comprehensive coverage.")
     parser.add_argument("--zero-day-sensitivity", choices=["low", "medium", "high"], default="medium",
                         help="Zero-day heuristic noise vs recall: low=4 signals, medium=2 (default), high=1")
     parser.add_argument(
@@ -238,6 +243,27 @@ Examples:
             "Provide the target URL to confirm you hold written authorization to test it. "
             "Without this flag, MAC/IP rotation is disabled and only UA rotation is permitted."
         ),
+    )
+    parser.add_argument(
+        "--audit-log",
+        metavar="FILE",
+        default="",
+        help="Write a structured JSON-lines audit log of every scan (target, profile, flags, "
+             "timestamp, authorization status) to FILE. Defaults to ~/.reconstrike-ng/audit.jsonl "
+             "if not set and --no-audit-log is not given.",
+    )
+    parser.add_argument(
+        "--no-audit-log",
+        action="store_true",
+        default=False,
+        help="Disable the default audit log. Use only in environments where file I/O is not permitted.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Print exactly what would be scanned (target, modules, flags) without sending any traffic. "
+             "Use to verify scope and authorization configuration before a real run.",
     )
     parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output (findings only)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
@@ -439,6 +465,11 @@ def main():
     if args.json_output:
         sys.stdout = sys.stderr
 
+    # Section 9: CLI conflict validation
+    if args.quiet and args.verbose:
+        logger.error("CLI conflict: --quiet and --verbose cannot be used together.")
+        sys.exit(1)
+
     if args.full:
         args.api_scan = True
         args.compliance = True
@@ -542,6 +573,31 @@ def main():
         getattr(args, "zero_day_sensitivity", "medium"), 2
     )
 
+    # Section 3: Authorization hard-fail for high-impact identity rotation
+    if anm_enabled and (args.tor or args.proxy_pool or args.rotate_mac):
+        auth_target = getattr(args, "authorized_target", "") or ""
+        if not auth_target:
+            logger.error(
+                "AUTHORIZATION REQUIRED: You are attempting to use high-impact identity rotation "
+                "(--rotate-mac, --tor, or --proxy-pool). You must explicitly provide the "
+                "--authorized-target URL to confirm you hold written authorization to scan it."
+            )
+            sys.exit(1)
+        # Normalize and compare
+        if urlparse(auth_target).netloc != urlparse(target).netloc:
+            logger.error(
+                "AUTHORIZATION MISMATCH: The --authorized-target (%s) does not match the scan "
+                "target (%s). High-impact rotation is prohibited.", auth_target, target
+            )
+            sys.exit(1)
+
+    # Validate Passive vs Active profile conflicts
+    if args.dast_proxy and not args.target:
+        # Passive only is fine
+        pass
+    elif args.dast_proxy and getattr(args, "profile", "") in ("aggressive", "deep"):
+        logger.warning("Mixing passive DAST proxy with aggressive active modules is not recommended.")
+
     config = ScanConfig(
         target=target, threads=args.threads, timeout=args.timeout, depth=depth,
         user_agent=args.user_agent,
@@ -555,7 +611,20 @@ def main():
         extra_urls=extra_urls,
         _zero_day_min_signals=zero_day_min_signals,
         authorized_target=getattr(args, "authorized_target", "") or "",
+        wordlist_file=getattr(args, "wordlist", "") or "",
+        audit_log_file=getattr(args, "audit_log", "") or "",
+        dry_run=getattr(args, "dry_run", False),
     )
+
+    if config.dry_run:
+        print("\n[DRY RUN] Configuration Validated:")
+        print(f"Target: {config.target}")
+        print(f"Modules: {', '.join(config.scan_modules)}")
+        print(f"Auth Target: {config.authorized_target}")
+        print(f"ANM Active: {config.anm_config.enabled}")
+        print(f"Wordlist: {config.wordlist_file or 'default COMMON_ROUTES'}")
+        print("Exiting cleanly (no traffic sent).")
+        sys.exit(0)
 
     session = ScanSession(config)
     global _active_session
@@ -570,6 +639,9 @@ def main():
 
     if args.proxy:
         session.session.proxies.update({"http": args.proxy, "https": args.proxy})
+
+    if not getattr(args, "no_audit_log", False):
+        _write_audit_log(config)
 
     if not args.quiet:
         profile_name = args.profile or ("deep" if args.deep else "standard")
@@ -647,12 +719,9 @@ def main():
                 name, module = ALL_MODULES[mod_key]
                 if stealth_cfg:
                     stealth_cfg.wait()
-                try:
-                    if args.verbose:
-                        logger.debug("Running DAST: %s", name)
-                    module.run(session)
-                except (OSError, ValueError, RuntimeError) as e:
-                    logger.error("Module '%s' error: %s", name, e)
+                if args.verbose:
+                    logger.debug("Running DAST: %s", name)
+                run_module_with_timeout(module, session)
                 progress.update(name)
         progress.finish()
 
@@ -660,10 +729,7 @@ def main():
             from scanner.nikto.scanner import run as nikto_run
             if not args.quiet:
                 logger.info("Running Nikto-style misconfiguration scan...")
-            try:
-                nikto_run(session)
-            except (OSError, ValueError, RuntimeError) as e:
-                logger.error("Nikto scan error: %s", e)
+            run_module_with_timeout(nikto_run, session)
 
         if args.api_scan:
             scan_api_endpoints(session)
@@ -806,6 +872,31 @@ def main():
 
     if args.ci:
         sys.exit(_ci_exit_code(session, args.severity_threshold))
+
+
+def _write_audit_log(config: ScanConfig) -> None:
+    """Write a structured JSON-lines record of the scan configuration."""
+    audit_file = config.audit_log_file or os.path.expanduser("~/.reconstrike-ng/audit.jsonl")
+    try:
+        os.makedirs(os.path.dirname(audit_file), exist_ok=True)
+    except OSError:
+        # Ignore dir creation errors (e.g. if default path parent is a file)
+        pass
+
+    record = {
+        "timestamp": time.time(),
+        "timestamp_iso": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        "target": config.target,
+        "authorized_target": config.authorized_target,
+        "modules": config.scan_modules,
+        "anm": config.anm_config.enabled,
+        "dry_run": config.dry_run,
+    }
+    try:
+        with open(audit_file, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError as e:
+        logger.error("Failed to write audit log to %s: %s", audit_file, e)
 
 
 if __name__ == "__main__":

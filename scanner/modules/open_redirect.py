@@ -90,7 +90,7 @@ def _test_url_params(session, url):
             ))
 
             try:
-                resp = session.get(test_url)
+                resp = session.get(test_url, allow_redirects=False)
             except (requests.RequestException, ValueError) as e:
                 logger.debug("open_redirect _test_url_params: request failed: %s", e)
                 continue
@@ -299,7 +299,7 @@ def _test_path_based(session, url):
         test_url = urlunparse(parsed._replace(query=test_query))
 
         try:
-            resp = session.get(test_url)
+            resp = session.get(test_url, allow_redirects=False)
         except (requests.RequestException, ValueError) as e:
             logger.debug("open_redirect _test_path_based: request failed: %s", e)
             continue
@@ -445,7 +445,7 @@ def _test_forms(session, form):
             test_data[name] = payload
 
             try:
-                resp = session.post(action, data=test_data) if method == "post" else session.get(action, params=test_data)
+                resp = session.post(action, data=test_data, allow_redirects=False) if method == "post" else session.get(action, params=test_data, allow_redirects=False)
             except (requests.RequestException, ValueError) as e:
                 logger.debug("open_redirect _test_forms: request failed: %s", e)
                 continue

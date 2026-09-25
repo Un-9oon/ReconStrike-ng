@@ -124,7 +124,7 @@ def _resp_text(resp) -> str:
 
 def _get_baseline(session: ScanSession, url: str) -> dict:
     start = time.time()
-    resp = session.get(url)
+    resp = session.get(url, allow_redirects=False)
     elapsed = time.time() - start
     if resp is None:
         return {"status": None, "size": 0, "time": elapsed, "body": ""}
@@ -209,7 +209,7 @@ def _fuzz_url_params(session: ScanSession, url: str, baseline: dict, min_signals
                 test_url = urlunparse(parsed._replace(query=urlencode(test_params, doseq=True)))
 
                 start = time.time()
-                resp = session.get(test_url)
+                resp = session.get(test_url, allow_redirects=False)
                 elapsed = time.time() - start
 
                 anomalies = _analyze_response(resp, elapsed, baseline, payload, category)
@@ -267,9 +267,9 @@ def _fuzz_form_fields(session: ScanSession, baseline: dict, min_signals: int = _
                     start = time.time()
                     if method == "GET":
                         test_url = action + "?" + urlencode(form_data)
-                        resp = session.get(test_url)
+                        resp = session.get(test_url, allow_redirects=False)
                     else:
-                        resp = session.post(action, data=form_data)
+                        resp = session.post(action, data=form_data, allow_redirects=False)
                         test_url = action
                     elapsed = time.time() - start
 

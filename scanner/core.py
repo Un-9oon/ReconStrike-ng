@@ -5,6 +5,7 @@ import threading
 import ipaddress
 import urllib3
 import os
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -120,15 +121,85 @@ class ScanConfig:
     scope_include: str = ""
     scope_exclude: str = ""
     anm_config: ANMConfig = field(default_factory=ANMConfig)
-    # Gap 2: operator-supplied seed URLs for unlinked endpoints
+    # Operator-supplied seed URLs for unlinked endpoints
     extra_urls: list = field(default_factory=list)
-    # Gap 3: minimum independent payload hits before emitting a zero-day finding
+    # Minimum independent payload hits before emitting a zero-day finding
     _zero_day_min_signals: int = 2
-    # Gap 6: operator must set this to enable high-impact ANM rotation
+    # Authorization gate: must be set to enable high-impact ANM rotation
     authorized_target: str = ""
+    # Section 2: path to a custom wordlist file for crawler route discovery
+    wordlist_file: str = ""
+    # Section 3: path for structured scan audit log (JSON-lines)
+    audit_log_file: str = ""
+    # Section 9: dry-run mode — resolve everything but send no traffic
+    dry_run: bool = False
 
 
 MAX_RESPONSE_SIZE = 10 * 1024 * 1024
+
+# Hard per-module execution ceiling. One hanging module cannot stall the
+# entire scan profile beyond this many seconds.
+MODULE_TIMEOUT_SECONDS = 300  # 5 minutes per module
+
+
+def run_module_with_timeout(module, session: "ScanSession", timeout: int = MODULE_TIMEOUT_SECONDS) -> None:
+    """Run module.run(session) with a hard wall-clock timeout.
+
+    If the module raises an exception or times out, a structured INFO-level
+    finding is added to the session instead of propagating the crash.
+    This ensures one buggy/hanging module never kills the whole scan.
+
+    Note on thread lifecycle: Python cannot forcibly terminate threads. After a
+    timeout the executor is shut down without waiting (cancel_futures=True), and
+    the timed-out thread is left as a daemon. Scans always run inside a process
+    that eventually exits, so orphaned module threads are harmless in practice.
+    """
+    module_name = getattr(module, "__name__", str(module)).split(".")[-1]
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(module.run, session)
+        try:
+            future.result(timeout=timeout)
+        except FuturesTimeoutError:
+            logger.error(
+                "[module-timeout] %s exceeded %ds limit — skipped",
+                module_name, timeout,
+            )
+            # Shut down without waiting — the thread is orphaned but harmless.
+            executor.shutdown(wait=False, cancel_futures=True)
+            session.add_finding(Finding(
+                title=f"Module Timeout: {module_name}",
+                severity=Severity.INFO,
+                description=(
+                    f"Module '{module_name}' did not complete within {timeout}s and was "
+                    "forcefully skipped. The target may be causing the module to hang "
+                    "(e.g. very slow responses, infinite pagination, or no response)."
+                ),
+                evidence=f"Module timed out after {timeout}s",
+                remediation="Use --timeout to reduce per-request timeout, or exclude this module with --exclude-modules.",
+                url=session.config.target,
+                module=module_name,
+            ))
+            return
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error(
+            "[module-crash] %s raised %s: %s",
+            module_name, type(exc).__name__, exc,
+        )
+        session.add_finding(Finding(
+            title=f"Module Error: {module_name}",
+            severity=Severity.INFO,
+            description=(
+                f"Module '{module_name}' raised an unhandled {type(exc).__name__} exception "
+                f"and was skipped. This is a scanner bug — please file an issue."
+            ),
+            evidence=str(exc),
+            remediation="Run with --verbose to see the full traceback. Report at https://github.com/Un-9oon/ReconStrike-ng/issues",
+            url=session.config.target,
+            module=module_name,
+        ))
+    finally:
+        executor.shutdown(wait=False)
 
 PRIVATE_IP_RANGES = [
     ipaddress.ip_network("10.0.0.0/8"),

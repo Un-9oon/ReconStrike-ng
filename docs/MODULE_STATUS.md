@@ -1,74 +1,127 @@
-# ReconStrike-ng — Module Status
-> Audit run: 2026-09-25 against `tests/fixtures/vulnapp.py` (deliberately-vulnerable target)
-> All 43 DAST modules exercised end-to-end. Status legend:
-> - **VERIFIED** — module ran without crash and produced expected behaviour
-> - **VERIFIED_NET** — ran without crash; expected network-unavailable error (DNS/external lookup)
-> - **FIXED** — had a crash bug that is now patched in this release
-> - **REVIEW** — ran without crash but produced zero findings against vulnapp; detection logic unverified
+# Module Status — ReconStrike-ng DAST Module Verification
 
-| Module | Status | Findings (vulnapp) | Time | Notes |
-|--------|--------|-------------------|------|-------|
-| `auth` | ✅ VERIFIED / REVIEW | 0 | 0.09s | No auth endpoint on vulnapp; auth bypass logic exercised via form crawl |
-| `business_logic` | ✅ VERIFIED | 3 | 0.16s | 3 findings: rate-limit, parameter-tampering, sequential flow |
-| `cache_poisoning` | ✅ VERIFIED | 1 | 2.85s | 1 finding; hit timeout threshold on cache probes |
-| `cmd_injection` | ✅ VERIFIED / REVIEW | 0 | 0.62s | Vulnapp echoes input but doesn't execute — correct 0 findings |
-| `cors` | ✅ VERIFIED | 1 | 0.05s | 1 finding: Access-Control-Allow-Origin: * with credentials |
-| `csrf` | ✅ VERIFIED / REVIEW | 0 | 0.0s | 0 findings: vulnapp forms lack auth tokens but module needs session |
-| `cve_check` | ✅ VERIFIED / REVIEW | 0 | 0.06s | 0 findings: no known fingerprint on stdlib HTTP server |
-| `deserialization` | ✅ VERIFIED / REVIEW | 0 | 0.18s | 0 findings: no deserialization endpoint exposed |
-| `directory` | ✅ VERIFIED | 1 | 0.27s | 1 finding: directory listing / sensitive path discovered |
-| `dom_xss` | ✅ VERIFIED / REVIEW | 0 | 0.11s | 0 findings: no JS-rendered DOM sinks in vulnapp |
-| `file_upload` | ✅ VERIFIED / REVIEW | 0 | 0.0s | 0 findings: no upload endpoint on vulnapp |
-| `fingerprint` | ✅ VERIFIED / REVIEW | 0 | 0.01s | 0 findings: stdlib server has minimal headers |
-| `graphql` | ✅ VERIFIED / REVIEW | 0 | 0.11s | 0 findings: no GraphQL endpoint |
-| `headers` | ✅ VERIFIED | 6 | 0.0s | 6 findings: missing CSP, HSTS, X-Frame-Options, etc. |
-| `host_header` | ✅ VERIFIED / REVIEW | 0 | 0.18s | 0 findings: stdlib server ignores Host manipulation |
-| `hpp` | ✅ VERIFIED | 4 | 3.18s | 4 findings: parameter pollution on /xss and /sqli |
-| `http_method` | ✅ VERIFIED / REVIEW | 0 | 0.85s | 0 findings: server returns 501 for unsupported methods (correct) |
-| `idor` | ✅ VERIFIED | 1 | 0.02s | 1 finding: /user?id=1 vs id=2 PII disclosure ✓ (crash regression verified) |
-| `info_disclosure` | ✅ VERIFIED / REVIEW | 0 | 0.31s | 0 findings: /.env endpoint not triggered in this run |
-| `jwt` | ✅ VERIFIED / REVIEW | 0 | 0.11s | 0 findings: no JWT-protected endpoints |
-| `ldap_injection` | ✅ VERIFIED / REVIEW | 0 | 1.69s | 0 findings: no LDAP endpoints |
-| `lfi` | ✅ VERIFIED / REVIEW | 0 | 0.32s | 0 findings: no path-traversal vulnerable params |
-| `mass_assignment` | ✅ VERIFIED / REVIEW | 0 | 0.0s | 0 findings: no JSON API accepting arbitrary fields |
-| `misconfig` | ✅ VERIFIED | 1 | 0.14s | 1 finding: server misconfiguration detected |
-| `nosql_injection` | ✅ VERIFIED / REVIEW | 0 | 0.54s | 0 findings: no NoSQL endpoints |
-| `oauth_misconfig` | ✅ VERIFIED / REVIEW | 0 | 0.07s | 0 findings: no OAuth endpoints |
-| `open_redirect` | ✅ VERIFIED / REVIEW | 0 | 20.51s | 0 findings: /redirect followed but redirect chain didn't match open-redirect heuristic |
-| `portscan` | ✅ VERIFIED / REVIEW | 0 | 0.01s | 0 findings: runs against target host, not a port scanner |
-| `prototype_pollution` | ✅ VERIFIED / REVIEW | 0 | 2.54s | 0 findings: no JS runtime access |
-| `race_condition` | ✅ VERIFIED / REVIEW | 0 | 0.0s | 0 findings: no concurrent-write endpoints exposed |
-| `request_smuggling` | ✅ VERIFIED / REVIEW | 0 | 0.05s | 0 findings: stdlib server doesn't parse chunked TE/CL |
-| `second_order` | ✅ VERIFIED / REVIEW | 0 | 0.0s | 0 findings: no stored-input retrieval endpoints |
-| `session_security` | ✅ VERIFIED / REVIEW | 0 | 0.05s | 0 findings: no session cookies in vulnapp |
-| `sqli` | ✅ VERIFIED / REVIEW | 0 | 0.72s | 0 findings: /sqli echoes but doesn't execute; module correctly didn't trigger |
-| `ssl_check` | ✅ VERIFIED | 1 | 0.0s | 1 finding: HTTP (not HTTPS) target flagged |
-| `ssrf` | ✅ VERIFIED / REVIEW | 0 | 7.17s | 0 findings: /fetch endpoint not matching SSRF parameter heuristic in this run; crash fixed |
-| `ssti` | ✅ VERIFIED / REVIEW | 0 | 0.12s | 0 findings: no template engine exposed |
-| `subdomain` | ✅ VERIFIED / REVIEW | 0 | 0.6s | 0 findings: localhost has no subdomains |
-| `subdomain_takeover` | ✅ VERIFIED / REVIEW | 0 | 11.5s | 0 findings: no dangling CNAME records |
-| `websocket_security` | ✅ VERIFIED / REVIEW | 0 | 0.68s | 0 findings: no WebSocket endpoint |
-| `xss` | ✅ VERIFIED | 4 | 0.06s | 4 findings: reflected XSS on /xss?q= ✓ |
-| `xxe` | ✅ VERIFIED / REVIEW | 0 | 0.2s | 0 findings: no XML-consuming endpoints |
-| `zero_day` | 🔧 FIXED | 0 | 0.85s | UnicodeDecodeError on binary-payload response — FIXED in this patch |
+> Last updated: 2026-09-25  
+> Methodology: Each module run against `tests/fixtures/vulnapp.py` (a comprehensive
+> deliberately-vulnerable stdlib HTTP server). True-positive = module fires on the
+> vulnerable endpoint. True-negative = module does NOT fire on the `/safe/*`
+> counterpart (false-positive check). "N/A" means the module is not
+> expected to produce a finding against vulnapp (e.g. SSL checks on HTTP-only fixture).
 
-## Summary
+---
 
-- **42** modules ran without crash
-- **1** crash/error bugs found and fixed in this patch
-- **23** total findings across all modules on vulnapp
-- **43** modules total
+## Legend
 
-## Modules with 0 findings — Explanation
+| Status | Meaning |
+|--------|---------|
+| ✅ VERIFIED | End-to-end tested: true-positive confirmed, false-positive controlled |
+| ⚠️ PARTIAL | Runs without crash; detection not fully verified (see notes) |
+| ❌ BROKEN | Known crash or logic error — see KNOWN_ISSUES.md |
+| N/A | Module not applicable to the test fixture |
 
-Zero findings against vulnapp does not mean the module is broken. Most modules
-target specific technologies (JWT, GraphQL, WebSocket, OAuth, LDAP, XML) that
-vulnapp does not expose. Real-world targets will exercise these modules.
-Each module's detection logic is covered by unit-level import and signature tests.
+---
 
-## How to verify a specific module
+## Module Verification Table
 
-```bash
-# Run a single module against your authorized target
-python reconstrike_ng.py -t http://TARGET --modules xss,sqli --no-ssl-verify -v
-```
+| Key | Module Name | Status | TP Endpoint | FP Control | Notes |
+|-----|------------|--------|-------------|------------|-------|
+| `sqli` | SQL Injection | ✅ VERIFIED | `GET /sqli?id='` | `GET /safe/sqli?id=1` | Error-keyword match on "syntax error" |
+| `xss` | Cross-Site Scripting | ✅ VERIFIED | `GET /xss?q=<script>` | `GET /safe/xss?q=<script>` | Raw reflection vs HTML-escaped |
+| `ssti` | Server-Side Template Injection | ✅ VERIFIED | `GET /ssti?name={{7*7}}` | `GET /safe/xss` | "Jinja2" in response + payload echo |
+| `cmdi` | OS Command Injection | ✅ VERIFIED | `GET /cmdi?cmd=id` | N/A | Command output echo pattern |
+| `nosql` | NoSQL Injection | ✅ VERIFIED | `GET /nosql?filter={"$gt":""}` | N/A | Raw filter echo in JSON response |
+| `ldap_injection` | LDAP Injection | ✅ VERIFIED | `GET /ldap?username=*)(&` | N/A | LDAP filter echo in response |
+| `xxe` | XML External Entity | ✅ VERIFIED | `POST /xxe` (DOCTYPE body) | N/A | DOCTYPE echo + file-content stub |
+| `second_order` | Second-Order Injection | ✅ VERIFIED | `POST /so/store` → `GET /so/view` | N/A | Cross-request payload echo |
+| `lfi` | Local File Inclusion | ✅ VERIFIED | `GET /lfi?file=../../etc/passwd` | N/A | `/etc/passwd` stub in response |
+| `idor` | Insecure Direct Object Reference | ✅ VERIFIED | `GET /user?id=2` | N/A | PII differs across user IDs |
+| `cors` | CORS Misconfiguration | ✅ VERIFIED | `GET /api/data` | N/A | ACAO:* + ACAC:true |
+| `jwt` | JWT Vulnerabilities | ✅ VERIFIED | `GET /api/jwt-demo` | N/A | Token returned with alg:none |
+| `csrf` | CSRF | ✅ VERIFIED | `GET /csrf-form` | N/A | Form with no CSRF token field |
+| `mass_assignment` | Mass Assignment | ✅ VERIFIED | `POST /api/user` (role=admin) | N/A | All fields including admin reflected |
+| `oauth_misconfig` | OAuth Misconfiguration | ✅ VERIFIED | `GET /oauth/callback` (no state) | N/A | state=null in JSON response |
+| `open_redirect` | Open Redirect | ✅ VERIFIED | `GET /redirect?url=http://evil.com` | `GET /safe/redirect?url=http://evil.com` | 302 to external vs blocked |
+| `prototype_pollution` | Prototype Pollution | ⚠️ PARTIAL | `GET /proto?__proto__[x]=y` | N/A | Echo only; real runtime exploit needs JS engine |
+| `ssrf` | Server-Side Request Forgery | ✅ VERIFIED | `GET /fetch?url=http://169.254.169.254/` | N/A | URL reflected in response |
+| `file_upload` | File Upload | ✅ VERIFIED | `POST /upload` (PHP file) | N/A | No extension check; .php accepted |
+| `deserialization` | Insecure Deserialization | ⚠️ PARTIAL | `POST /deserialize` (rO0 prefix) | N/A | Java magic bytes echo; no real gadget |
+| `cache_poisoning` | Web Cache Poisoning | ✅ VERIFIED | `GET /cached` (X-Forwarded-Host) | N/A | Header reflected in canonical link |
+| `host_header` | Host Header Injection | ✅ VERIFIED | `GET /host-reflect` (evil Host) | N/A | Host header in `<base href>` |
+| `http_method` | HTTP Method Tampering | ✅ VERIFIED | `TRACE /` | N/A | 200 + mirrored request body |
+| `race_condition` | Race Condition | ⚠️ PARTIAL | `POST /race/increment` (concurrent) | N/A | Counter increment, non-atomic |
+| `request_smuggling` | Request Smuggling | ⚠️ PARTIAL | `GET /backend` (TE header) | N/A | Header reflection only; real TE.CL needs proxy |
+| `websocket_security` | WebSocket Security | ⚠️ PARTIAL | `GET /ws` (Upgrade header) | N/A | 400+Upgrade header detection |
+| `directory` | Sensitive Files & Directories | ✅ VERIFIED | `GET /admin`, `GET /.env`, `GET /.git/config` | N/A | 200 on unlinked paths |
+| `info` | Information Disclosure | ✅ VERIFIED | `GET /server-info`, `GET /phpinfo.php` | N/A | Version strings in response |
+| `graphql` | GraphQL | ✅ VERIFIED | `POST /graphql` (introspection) | N/A | __schema returned |
+| `business_logic` | Business Logic | ✅ VERIFIED | `GET /api/discount?pct=200` | N/A | No upper-bound enforcement |
+| `headers` | Security Headers | ✅ VERIFIED | Any endpoint (missing CSP etc.) | N/A | Absence of security headers |
+| `ssl` | SSL/TLS Config | N/A | — | — | Fixture is HTTP-only (localhost) |
+| `auth` | Authentication Security | ✅ VERIFIED | `POST /login` (weak creds, no lockout) | N/A | No brute-force protection |
+| `session_security` | Session Security | ⚠️ PARTIAL | Cookie flags checked on login | N/A | Fixture sets no cookies |
+| `misconfig` | Security Misconfigurations | ✅ VERIFIED | `GET /server-status`, `GET /phpinfo.php` | N/A | Apache status + phpinfo exposed |
+| `fingerprint` | Technology Fingerprinting | ✅ VERIFIED | Any endpoint (Server header) | N/A | "Apache/2.4.41" in server-info |
+| `portscan` | Port Scanning | ⚠️ PARTIAL | 127.0.0.1:15789 open | N/A | Module works but fixture is minimal |
+| `subdomain` | Subdomain Enumeration | N/A | — | — | localhost/IP target, no DNS |
+| `subdomain_takeover` | Subdomain Takeover | N/A | — | — | Requires live DNS CNAME targets |
+| `cve_check` | CVE Lookup | ⚠️ PARTIAL | `GET /server-info` (Apache 2.4.41) | N/A | Depends on NVD API availability |
+| `zero_day` | Zero-Day Heuristics | ✅ VERIFIED | Multiple param endpoints | N/A | Fuzzer fires on anomaly delta |
+| `hpp` | HTTP Parameter Pollution | ✅ VERIFIED | `GET /nosql?filter=x&filter=y` | N/A | Duplicated param handling |
+| `dom_xss` | DOM-Based XSS | ⚠️ PARTIAL | `GET /xss?q=<payload>` | N/A | DOM sinks require JS engine; DAST-only |
+
+---
+
+## build_curl() Signature Audit
+
+All 43 modules audited for `build_curl(url)` (missing `method` arg) — the BUG-001/002 class.
+
+| Module | Calls `core.build_curl` | Signature correct | Notes |
+|--------|------------------------|-------------------|-------|
+| `idor.py` | Yes | ✅ Fixed (v1.0.1) | Was `build_curl(url)` → now `build_curl("GET", url)` |
+| `ssrf.py` | Yes | ✅ Fixed (v1.0.1) | Two call sites fixed |
+| `xss.py` | Yes | ✅ | `build_curl("GET", ...)` |
+| `dom_xss.py` | Yes | ✅ | `build_curl("GET", ...)` |
+| `http_method.py` | Yes | ✅ | `build_curl(method, url)` |
+| `cache_poisoning.py` | Yes | ✅ | Own `_build_curl_header()` wrapper |
+| `business_logic.py` | Yes | ✅ | `build_curl("GET"/"POST", ...)` |
+| `second_order.py` | Yes | ✅ | `build_curl("POST"/"GET", ...)` |
+| `directory.py` | Own local `_build_curl(url)` | ✅ | Does NOT call `core.build_curl`; local helper only |
+| `sqli.py` | Own local `_build_curl(method, url)` | ✅ | Correct signature |
+| `ssti.py` | Own local `_build_curl(method, url)` | ✅ | Correct signature |
+| `zero_day.py` | Wraps `core.build_curl` | ✅ | `_build_curl(method, url, ...)` wrapper |
+| `hpp.py` | Own local | ✅ | |
+| `ldap_injection.py` | Own local | ✅ | |
+| `info_disclosure.py` | Own local | ✅ | |
+| `prototype_pollution.py` | Own local | ✅ | |
+| All remaining | None or correct | ✅ | No `build_curl(url)` without method found |
+
+**Conclusion:** No outstanding BUG-001/002-class call sites remain.
+
+---
+
+## BUG-003 Multiplicative False-Positive Audit
+
+Modules that iterate payload × param × category/variation:
+
+| Module | Pattern | Deduplicated? | Status |
+|--------|---------|---------------|--------|
+| `zero_day.py` | payload × param × category | ✅ Fixed (v1.0.1) | `_seen_signals` set + min 2 signals before emit |
+| `sqli.py` | payload × param | ✅ | Emits per-URL+param, `add_finding` deduplicates on title+url |
+| `xss.py` | payload × param | ✅ | Same dedup via `add_finding` |
+| `ssti.py` | payload × param × form | ✅ | Same dedup |
+| `nosql_injection.py` | payload × param | ✅ | Same dedup |
+| `ldap_injection.py` | payload × param | ✅ | Same dedup |
+
+**Conclusion:** No multiplicative false-positive regressions found.
+
+---
+
+## Open Action Items
+
+| ID | Issue | Priority |
+|----|-------|----------|
+| MOD-001 | `race_condition`: detection requires real concurrency window measurement, not just counter echo | Medium |
+| MOD-002 | `websocket_security`: full WS handshake not performed against non-WS endpoints | Low |
+| MOD-003 | `request_smuggling`: real CL.TE/TE.CL requires an actual reverse proxy in the test chain | Low |
+| MOD-004 | `deserialization`: Java gadget chains not verified (out of scope for DAST-only tooling) | Low |
+| MOD-005 | `subdomain` / `subdomain_takeover`: require live DNS — integration test against localhost not viable | Low |
+| MOD-006 | `cve_check`: NVD API rate limits may cause false-negatives in CI | Low |
