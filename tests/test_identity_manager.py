@@ -17,6 +17,9 @@ from scanner.identity_manager import (
     _UA_POOL,
 )
 
+# Extract UA strings from the tuple pool for membership checks
+_UA_STRINGS = [ua for ua, _ in _UA_POOL]
+
 
 class TestANMConfig(unittest.TestCase):
     """Tests for ANMConfig dataclass defaults."""
@@ -90,7 +93,7 @@ class TestIdentityManagerInit(unittest.TestCase):
     def test_ua_rotation_initialised(self):
         cfg = ANMConfig(enabled=True, rotate_ua=True)
         mgr = IdentityManager(cfg)
-        self.assertIn(mgr.current_ua, _UA_POOL)
+        self.assertIn(mgr.current_ua, _UA_STRINGS)
 
     def test_proxy_pool_loading(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -143,7 +146,7 @@ class TestUARotation(unittest.TestCase):
         mgr = IdentityManager(cfg)
         for _ in range(50):
             mgr._rotate_ua()
-            self.assertIn(mgr._state.user_agent, _UA_POOL)
+            self.assertIn(mgr._state.user_agent, _UA_STRINGS)
 
 
 class TestProxyPoolRotation(unittest.TestCase):
@@ -342,7 +345,7 @@ class TestScanSessionANMIntegration(unittest.TestCase):
         )
         session = ScanSession(cfg)
         self.assertIsNotNone(session.identity_manager)
-        self.assertIn(session.session.headers["User-Agent"], _UA_POOL)
+        self.assertIn(session.session.headers["User-Agent"], _UA_STRINGS)
 
     def test_session_no_anm_by_default(self):
         from scanner.core import ScanConfig, ScanSession

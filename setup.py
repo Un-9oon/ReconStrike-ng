@@ -31,6 +31,7 @@ setup(
         "colorama>=0.4.6",
         "dnspython>=2.4.0",
         "fpdf2>=2.8.0",
+        "curl_cffi>=0.16.0",
     ],
     entry_points={
         "console_scripts": [
