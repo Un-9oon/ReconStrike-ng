@@ -153,9 +153,11 @@ def run(session: ScanSession) -> None:
             session.add_finding(Finding(
                 title="Open Port: {} ({})".format(service, port),
                 severity=severity,
-                description="{} is accessible on port {}. Review if this service needs to be publicly exposed.".format(service, port),
+                description="{} is accessible on port {}. Review if this service needs to be publicly exposed.".format(
+                    service, port),
                 evidence=evidence,
-                remediation="Review if port {} ({}) needs to be publicly accessible. Apply firewall rules.".format(port, service),
+                remediation="Review if port {} ({}) needs to be publicly accessible. Apply firewall rules.".format(
+                    port, service),
                 url=session.config.target,
                 module="portscan",
                 cwe="CWE-284",

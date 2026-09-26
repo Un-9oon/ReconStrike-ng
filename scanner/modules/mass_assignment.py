@@ -1,6 +1,5 @@
 import json
 import re
-from urllib.parse import urlparse
 
 import requests
 
@@ -120,7 +119,8 @@ def _make_confirmed_finding(action, source_url, param, value, description,
                             curl_cmd, is_json=False):
     tag = "JSON" if is_json else "form"
     loc_prefix = "JSON body submitted to" if is_json else "Form submission to"
-    title = "Mass Assignment via JSON - {}".format(description) if is_json else "Mass Assignment - {}".format(description)
+    title = "Mass Assignment via JSON - {}".format(
+        description) if is_json else "Mass Assignment - {}".format(description)
 
     return Finding(
         title=title,
@@ -168,7 +168,8 @@ def _make_confirmed_finding(action, source_url, param, value, description,
         ).format(action=action),
         affected_component="Parameter binding in handler for {}".format(action),
         references="https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/ | https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
-        detection_method="Added extra parameter '{}={}' and detected it reflected in server response ({}).".format(param, value, indicator),
+        detection_method="Added extra parameter '{}={}' and detected it reflected in server response ({}).".format(
+            param, value, indicator),
     )
 
 
@@ -214,7 +215,8 @@ def _make_potential_finding(action, source_url, param, value, description,
         ).format(action),
         affected_component="Parameter binding in handler for {}".format(action),
         references="https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
-        detection_method="Added extra parameter '{}={}' and observed different response vs baseline.".format(param, value),
+        detection_method="Added extra parameter '{}={}' and observed different response vs baseline.".format(
+            param, value),
     )
 
 

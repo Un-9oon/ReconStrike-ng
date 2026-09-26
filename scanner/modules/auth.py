@@ -61,8 +61,10 @@ def _check_login_security(session):
                     session.add_finding(Finding(
                         title="Login Form Submits Over HTTP",
                         severity=Severity.HIGH,
-                        description="Login form at {url} submits credentials over unencrypted HTTP to {action}. Credentials can be intercepted via network sniffing.".format(url=url, action=action),
-                        evidence="Login Page: {url}\nForm action: {action}\nProtocol: HTTP (unencrypted)".format(url=url, action=action),
+                        description="Login form at {url} submits credentials over unencrypted HTTP to {action}. Credentials can be intercepted via network sniffing.".format(
+                            url=url, action=action),
+                        evidence="Login Page: {url}\nForm action: {action}\nProtocol: HTTP (unencrypted)".format(
+                            url=url, action=action),
                         remediation="Ensure login forms submit to HTTPS endpoints only.",
                         url=url,
                         module="auth",
@@ -205,14 +207,17 @@ def _check_password_policy(session):
                             session.add_finding(Finding(
                                 title="No Client-Side Password Strength Validation",
                                 severity=Severity.INFO,
-                                description="Registration form at {url} doesn't enforce password requirements client-side. Weak passwords may be accepted.".format(url=url),
-                                evidence="Password field '{name}' lacks minlength/pattern attributes.\nForm action: {action}".format(name=inp["name"], action=form["action"]),
+                                description="Registration form at {url} doesn't enforce password requirements client-side. Weak passwords may be accepted.".format(
+                                    url=url),
+                                evidence="Password field '{name}' lacks minlength/pattern attributes.\nForm action: {action}".format(
+                                    name=inp["name"], action=form["action"]),
                                 remediation="Enforce password policy both client-side (minlength, pattern) and server-side.",
                                 url=url,
                                 module="auth",
                                 cwe="CWE-521",
                                 confirmed=True,
-                                location="Password field '{name}' in registration form at {url}".format(name=inp["name"], url=url),
+                                location="Password field '{name}' in registration form at {url}".format(
+                                    name=inp["name"], url=url),
                                 curl_command="curl -k '{url}'".format(url=url),
                                 developer_fix=(
                                     "Add client-side validation to the password field:\n"

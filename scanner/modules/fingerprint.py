@@ -62,7 +62,8 @@ TECH_SIGNATURES = {
 }
 
 WAF_SIGNATURES = [
-    {"name": "Cloudflare", "headers": {"Server": "cloudflare", "CF-RAY": ""}, "cookies": ["__cfduid", "__cf_bm", "cf_clearance"]},
+    {"name": "Cloudflare", "headers": {"Server": "cloudflare", "CF-RAY": ""},
+        "cookies": ["__cfduid", "__cf_bm", "cf_clearance"]},
     {"name": "AWS WAF", "headers": {"X-AMZ-": "", "X-Amzn-": ""}, "cookies": ["awselb", "AWSALB"]},
     {"name": "Akamai", "headers": {"X-Akamai-": ""}, "cookies": ["AKA_A2", "akamai"]},
     {"name": "Sucuri", "headers": {"X-Sucuri-": ""}, "cookies": ["sucuri_"]},
@@ -197,7 +198,8 @@ def run(session: ScanSession) -> None:
         session.add_finding(Finding(
             title="WAF/CDN Detected: {}".format(waf_list),
             severity=Severity.INFO,
-            description="Web Application Firewall or CDN detected: {}. Some scan results may be affected by WAF filtering.".format(waf_list),
+            description="Web Application Firewall or CDN detected: {}. Some scan results may be affected by WAF filtering.".format(
+                waf_list),
             evidence="Detected via header/cookie analysis: {}".format(waf_list),
             remediation="Informational. WAF provides defense-in-depth but should not be the only protection.",
             url=session.config.target,
@@ -232,7 +234,8 @@ def _check_version_vulns(session, tech_set):
                 session.add_finding(Finding(
                     title="End-of-Life Software: {}".format(tech),
                     severity=Severity.HIGH,
-                    description="{} Running EOL software means no security patches for newly discovered vulnerabilities.".format(message),
+                    description="{} Running EOL software means no security patches for newly discovered vulnerabilities.".format(
+                        message),
                     evidence="Detected: {}".format(tech),
                     remediation="Upgrade to a currently supported version.",
                     url=session.config.target,
@@ -240,7 +243,8 @@ def _check_version_vulns(session, tech_set):
                     cwe="CWE-1104",
                     confirmed=True,
                     location="Server technology version",
-                    developer_fix="Upgrade {} to the latest supported version.\nCheck https://endoflife.date/ for EOL schedules.".format(tech.split()[0]),
+                    developer_fix="Upgrade {} to the latest supported version.\nCheck https://endoflife.date/ for EOL schedules.".format(tech.split()[
+                                                                                                                                         0]),
                     affected_component="{} installation".format(tech),
                     references="https://endoflife.date/",
                     detection_method=_DETECTION,

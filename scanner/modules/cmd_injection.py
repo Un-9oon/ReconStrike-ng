@@ -55,7 +55,7 @@ def _get_baseline(session, url, param, original):
 def _validate_passwd(resp_text, indicator):
     if "root:" not in indicator:
         return True
-    lines = [l for l in resp_text.split("\n") if re.match(r"^[a-z_][\w-]*:[^:]*:\d+:\d+:", l)]
+    lines = [ln for ln in resp_text.split("\n") if re.match(r"^[a-z_][\w-]*:[^:]*:\d+:\d+:", ln)]
     return len(lines) >= 3
 
 

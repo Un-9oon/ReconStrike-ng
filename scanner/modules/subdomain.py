@@ -121,12 +121,12 @@ def run(session: ScanSession) -> None:
                 f"3. Sensitive subdomains found: {', '.join(s[0] for s in interesting[:5])}"
             ) if interesting else "",
             developer_fix=(
-                f"1. Remove public DNS records for internal services:\n"
-                f"   Delete A/CNAME records for dev, staging, internal subdomains.\n"
-                f"2. Use split-horizon DNS:\n"
-                f"   Internal DNS returns private IPs; external DNS returns nothing.\n"
-                f"3. Firewall: Block external access to non-public subdomains.\n"
-                f"4. If services must be public, require VPN or SSO authentication."
+                "1. Remove public DNS records for internal services:\n"
+                "   Delete A/CNAME records for dev, staging, internal subdomains.\n"
+                "2. Use split-horizon DNS:\n"
+                "   Internal DNS returns private IPs; external DNS returns nothing.\n"
+                "3. Firewall: Block external access to non-public subdomains.\n"
+                "4. If services must be public, require VPN or SSO authentication."
             ),
             affected_component=f"DNS configuration for {base_domain}",
             references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/01-Information_Gathering/03-Review_Webserver_Metafiles_for_Information_Leakage",

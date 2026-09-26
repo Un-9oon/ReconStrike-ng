@@ -2,7 +2,6 @@ import re
 from dataclasses import dataclass
 
 from scanner.core import Severity
-from scanner.log import logger
 from scanner.proxy.history import HttpTransaction
 
 

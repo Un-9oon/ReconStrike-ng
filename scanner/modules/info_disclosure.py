@@ -9,7 +9,8 @@ SENSITIVE_PATTERNS = [
     (r'(?:aws_access_key_id|AKIA)[A-Z0-9]{12,}', "AWS Access Key", Severity.CRITICAL),
     (r'-----BEGIN (?:RSA |DSA |EC )?PRIVATE KEY-----', "Private Key", Severity.CRITICAL),
     (r'(?:sk-|pk_live_|sk_live_|rk_live_)[a-zA-Z0-9]{20,}', "API Secret Key", Severity.CRITICAL),
-    (r'(?:jdbc|mysql|postgresql|mongodb)://[^\s<"\']+:[^\s<"\']+@[^\s<"\']+', "Database Connection String", Severity.CRITICAL),
+    (r'(?:jdbc|mysql|postgresql|mongodb)://[^\s<"\']+:[^\s<"\']+@[^\s<"\']+',
+     "Database Connection String", Severity.CRITICAL),
 ]
 
 COMMENT_PATTERNS = [
@@ -124,7 +125,8 @@ def run(session: ScanSession) -> None:
         # Stack traces
         if re.search(STACK_TRACE_PATTERN, body, re.MULTILINE):
             trace_match = re.search(r'((?:^\s+at\s+[\w.$]+\([\w.]+:\d+\).*\n){1,5})', body, re.MULTILINE)
-            trace_snippet = trace_match.group(0).strip()[:300] if trace_match else "Multiple consecutive 'at ...' lines found"
+            trace_snippet = trace_match.group(0).strip(
+            )[:300] if trace_match else "Multiple consecutive 'at ...' lines found"
 
             session.add_finding(Finding(
                 title="Stack Trace Exposed",

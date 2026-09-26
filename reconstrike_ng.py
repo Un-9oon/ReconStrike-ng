@@ -15,7 +15,7 @@ from scanner.identity_manager import ANMConfig
 from scanner.concurrent import ConcurrentCrawler
 from scanner.reporter import generate_html_report, print_summary
 from scanner.diff_scan import save_scan_results, load_previous_scan, compute_diff, print_diff
-from scanner.compliance import generate_compliance_report, print_compliance_summary, generate_compliance_html
+from scanner.compliance import generate_compliance_report, print_compliance_summary
 from scanner.api_scanner import scan_api_endpoints
 from scanner.waf_detect import detect_waf
 from scanner.tech_stack import analyze_tech_stack, print_tech_stack
@@ -127,7 +127,7 @@ SCAN_PROFILES = {
     },
     "owasp": {
         "modules": ["sqli", "xss", "ssti", "csrf", "ssrf", "xxe", "lfi", "cmdi", "idor",
-                     "jwt", "auth", "misconfig", "cors", "headers", "ssl", "fingerprint", "directory", "info"],
+                    "jwt", "auth", "misconfig", "cors", "headers", "ssl", "fingerprint", "directory", "info"],
         "depth": 4,
         "description": "OWASP Top 10 coverage scan",
     },
@@ -160,19 +160,24 @@ Examples:
     )
     parser.add_argument("-t", "--target", help="Target URL (Required for DAST)")
     parser.add_argument("--sast-dir", help="Local directory path for Static Application Security Testing (SAST)")
-    parser.add_argument("-o", "--output", default="reconstrike_report.html", help="Output report file (default: reconstrike_report.html)")
+    parser.add_argument("-o", "--output", default="reconstrike_report.html",
+                        help="Output report file (default: reconstrike_report.html)")
     parser.add_argument("--depth", type=int, default=3, help="Crawl depth (default: 3)")
     parser.add_argument("--timeout", type=int, default=10, help="Request timeout in seconds (default: 10)")
     parser.add_argument("--threads", type=int, default=10, help="Number of threads (default: 10)")
-    parser.add_argument("--modules", help=f"Comma-separated list of modules (default: all). Available: {','.join(ALL_MODULES.keys())}")
+    parser.add_argument(
+        "--modules", help=f"Comma-separated list of modules (default: all). Available: {','.join(ALL_MODULES.keys())}")
     parser.add_argument("--exclude-modules", help="Comma-separated list of modules to exclude")
-    parser.add_argument("--profile", choices=SCAN_PROFILES.keys(), help="Scan profile (overrides --modules and --depth)")
+    parser.add_argument("--profile", choices=SCAN_PROFILES.keys(),
+                        help="Scan profile (overrides --modules and --depth)")
     parser.add_argument("--deep", action="store_true", help="Deep scan mode (shortcut for --profile deep)")
-    parser.add_argument("--full", action="store_true", help="Full scan: all modules, max depth, API scan, compliance, PDF report")
+    parser.add_argument("--full", action="store_true",
+                        help="Full scan: all modules, max depth, API scan, compliance, PDF report")
 
     parser.add_argument("--auth-url", help="Login page URL for authenticated scanning")
     parser.add_argument("-u", "--username", help="Username for authenticated scanning")
-    parser.add_argument("-p", "--password", help="Password for authenticated scanning (visible in process list; prefer --password-file)")
+    parser.add_argument("-p", "--password",
+                        help="Password for authenticated scanning (visible in process list; prefer --password-file)")
     parser.add_argument("--password-file", help="Read password from file (more secure than --password)")
     parser.add_argument("--cookie", help="Custom cookie (format: name=value; name2=value2)")
     parser.add_argument("--header", action="append", help="Custom header (format: Name: Value)")
@@ -185,26 +190,39 @@ Examples:
     parser.add_argument("--user-agent", default=f"ReconStrike/{VERSION} (Security Audit)", help="Custom User-Agent")
 
     anm_group = parser.add_argument_group("Adaptive Network Masking (ANM)",
-                                           "Runtime IP/MAC/UA rotation to evade blocking during scans")
-    anm_group.add_argument("--anm", action="store_true", help="Enable Adaptive Network Masking (auto-rotate identity on block)")
+                                          "Runtime IP/MAC/UA rotation to evade blocking during scans")
+    anm_group.add_argument("--anm", action="store_true",
+                           help="Enable Adaptive Network Masking (auto-rotate identity on block)")
     anm_group.add_argument("--tor", action="store_true", help="Route traffic through Tor SOCKS5 proxy (127.0.0.1:9050)")
-    anm_group.add_argument("--tor-control-port", type=int, default=9051, help="Tor ControlPort for identity renewal (default: 9051)")
-    anm_group.add_argument("--tor-password", default="", help="Tor ControlPort authentication password (visible in process list; prefer --tor-password-file)")
-    anm_group.add_argument("--tor-password-file", help="Read Tor ControlPort password from file (more secure than --tor-password)")
+    anm_group.add_argument("--tor-control-port", type=int, default=9051,
+                           help="Tor ControlPort for identity renewal (default: 9051)")
+    anm_group.add_argument("--tor-password", default="",
+                           help="Tor ControlPort authentication password (visible in process list; prefer --tor-password-file)")
+    anm_group.add_argument("--tor-password-file",
+                           help="Read Tor ControlPort password from file (more secure than --tor-password)")
     anm_group.add_argument("--proxy-pool", help="File with newline-delimited proxy list for round-robin rotation")
-    anm_group.add_argument("--rotate-mac", action="store_true", help="Enable MAC address rotation (Linux, requires root)")
-    anm_group.add_argument("--rotate-ua", action="store_true", default=False, help="Enable User-Agent fingerprint rotation")
-    anm_group.add_argument("--anm-interface", default="", help="Network interface for MAC rotation (auto-detected if empty)")
-    anm_group.add_argument("--anm-cooldown", type=float, default=3.0, help="Seconds to wait after identity rotation (default: 3)")
-    anm_group.add_argument("--anm-max-rotations", type=int, default=50, help="Maximum identity rotations per scan (default: 50)")
+    anm_group.add_argument("--rotate-mac", action="store_true",
+                           help="Enable MAC address rotation (Linux, requires root)")
+    anm_group.add_argument("--rotate-ua", action="store_true", default=False,
+                           help="Enable User-Agent fingerprint rotation")
+    anm_group.add_argument("--anm-interface", default="",
+                           help="Network interface for MAC rotation (auto-detected if empty)")
+    anm_group.add_argument("--anm-cooldown", type=float, default=3.0,
+                           help="Seconds to wait after identity rotation (default: 3)")
+    anm_group.add_argument("--anm-max-rotations", type=int, default=50,
+                           help="Maximum identity rotations per scan (default: 50)")
 
     net_group = parser.add_argument_group("Network Scanning", "Internal network port scanning and service detection")
-    net_group.add_argument("--network-scan", metavar="TARGET", help="Network scan target (IP, hostname, or CIDR range, e.g. 192.168.1.0/24)")
-    net_group.add_argument("--ports", default="top-1000", help="Port specification: top-1000, 1-65535, 22,80,443, or mixed (default: top-1000)")
-    net_group.add_argument("--scan-speed", type=int, choices=[1, 2, 3, 4, 5], default=3, help="Scan speed 1-5: 1=stealth, 3=normal, 5=insane (default: 3)")
+    net_group.add_argument("--network-scan", metavar="TARGET",
+                           help="Network scan target (IP, hostname, or CIDR range, e.g. 192.168.1.0/24)")
+    net_group.add_argument("--ports", default="top-1000",
+                           help="Port specification: top-1000, 1-65535, 22,80,443, or mixed (default: top-1000)")
+    net_group.add_argument("--scan-speed", type=int, choices=[1, 2, 3, 4, 5],
+                           default=3, help="Scan speed 1-5: 1=stealth, 3=normal, 5=insane (default: 3)")
 
     proxy_group = parser.add_argument_group("DAST Proxy", "Interception proxy for passive traffic analysis")
-    proxy_group.add_argument("--dast-proxy", action="store_true", help="Start DAST interception proxy for passive analysis")
+    proxy_group.add_argument("--dast-proxy", action="store_true",
+                             help="Start DAST interception proxy for passive analysis")
     proxy_group.add_argument("--proxy-port", type=int, default=8087, help="DAST proxy listen port (default: 8087)")
     proxy_group.add_argument("--proxy-bind", default="127.0.0.1",
                              help="DAST proxy bind address (default: 127.0.0.1). Use 0.0.0.0 for network access.")
@@ -216,11 +234,14 @@ Examples:
     parser.add_argument("--compliance", action="store_true", help="Include OWASP Top 10 & PCI DSS compliance report")
     parser.add_argument("--api-scan", action="store_true", help="Enable API endpoint discovery and testing")
     parser.add_argument("--nikto", action="store_true", help="Run Nikto-style misconfiguration and sensitive file scan")
-    parser.add_argument("--ci", action="store_true", help="CI/CD mode: exit code reflects severity (1=critical, 2=high, 3=medium)")
+    parser.add_argument("--ci", action="store_true",
+                        help="CI/CD mode: exit code reflects severity (1=critical, 2=high, 3=medium)")
     parser.add_argument("--severity-threshold", choices=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
                         default="MEDIUM", help="Minimum severity to report in CI mode (default: MEDIUM)")
-    stealth_group = parser.add_argument_group("Stealth Mode", "Make scan traffic indistinguishable from real browser sessions")
-    stealth_group.add_argument("--stealth", action="store_true", help="Enable stealth mode (full browser emulation + human timing)")
+    stealth_group = parser.add_argument_group(
+        "Stealth Mode", "Make scan traffic indistinguishable from real browser sessions")
+    stealth_group.add_argument("--stealth", action="store_true",
+                               help="Enable stealth mode (full browser emulation + human timing)")
     stealth_group.add_argument("--stealth-speed", choices=["slow", "normal", "fast"], default="normal",
                                help="Stealth timing: slow (3-12s gaps), normal (1-5s), fast (0.3-2s)")
 
@@ -393,7 +414,8 @@ class ProgressTracker:
     def finish(self):
         if not self.quiet:
             elapsed = time.time() - self.start_time
-            print(f"\r  {Fore.GREEN}[{'█' * 30}] 100.0% complete in {elapsed:.1f}s{' ' * 30}{Style.RESET_ALL}", file=sys.stderr)
+            print(
+                f"\r  {Fore.GREEN}[{'█' * 30}] 100.0% complete in {elapsed:.1f}s{' ' * 30}{Style.RESET_ALL}", file=sys.stderr)
 
 
 # Global reference for SIGINT cleanup
@@ -453,7 +475,8 @@ def main():
             logger.error("Cannot read Tor password file %s: %s", args.tor_password_file, e)
             sys.exit(1)
     elif args.tor_password:
-        logger.warning("--tor-password is visible in process list. Use --tor-password-file or set RECONSTRIKE_TOR_PASSWORD env var.")
+        logger.warning(
+            "--tor-password is visible in process list. Use --tor-password-file or set RECONSTRIKE_TOR_PASSWORD env var.")
         for i, arg in enumerate(sys.argv):
             if arg == "--tor-password" and i + 1 < len(sys.argv):
                 sys.argv[i + 1] = "********"
@@ -487,7 +510,7 @@ def main():
     if args.dast_proxy:
         try:
             from scanner.proxy.server import ProxyServer
-            dast_proxy = ProxyServer(port=args.proxy_port, bind_addr=args.proxy_bind, verify_ssl=config.verify_ssl)
+            dast_proxy = ProxyServer(port=args.proxy_port, bind_addr=args.proxy_bind, verify_ssl=not args.insecure)
             dast_proxy.start()
             if not args.quiet:
                 logger.info("DAST Proxy started on %s:%d", args.proxy_bind, args.proxy_port)
@@ -648,7 +671,8 @@ def main():
         logger.info("Target     : %s", target)
         logger.info("Profile    : %s", profile_name)
         logger.info("Depth      : %s", depth)
-        logger.info("Modules    : %d (%s%s)", len(selected_modules), ", ".join(selected_modules[:5]), "..." if len(selected_modules) > 5 else "")
+        logger.info("Modules    : %d (%s%s)", len(selected_modules), ", ".join(
+            selected_modules[:5]), "..." if len(selected_modules) > 5 else "")
         logger.info("Threads    : %s", args.threads)
         if args.proxy:
             logger.info("Proxy      : %s", args.proxy)
@@ -745,7 +769,7 @@ def main():
         run_sast(session, args.sast_dir, quiet=args.quiet)
 
     if args.network_scan:
-        from scanner.network.port_scanner import scan_host, scan_network, parse_port_range, SERVICE_NAMES
+        from scanner.network.port_scanner import scan_host, scan_network, parse_port_range
         if not args.quiet:
             logger.info("=" * 60)
             logger.info("NETWORK SCAN: %s", args.network_scan)
@@ -775,8 +799,10 @@ def main():
                     session.add_finding(Finding(
                         title=f"High-Risk Service Exposed: {svc} on port {pr.port}",
                         severity=Severity.HIGH,
-                        description="Port {} ({}) is open on {}. This service is commonly targeted by attackers.".format(pr.port, svc, hr.ip),
-                        evidence="Host: {}, Port: {}/tcp, State: {}, Service: {}".format(hr.ip, pr.port, pr.state, pr.service),
+                        description="Port {} ({}) is open on {}. This service is commonly targeted by attackers.".format(
+                            pr.port, svc, hr.ip),
+                        evidence="Host: {}, Port: {}/tcp, State: {}, Service: {}".format(
+                            hr.ip, pr.port, pr.state, pr.service),
                         remediation="1. Verify this service needs to be exposed\n"
                                     "2. Restrict access via firewall rules\n"
                                     "3. Ensure the service is patched and hardened",

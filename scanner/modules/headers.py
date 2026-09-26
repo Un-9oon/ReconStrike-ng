@@ -182,7 +182,8 @@ def run(session: ScanSession) -> None:
         session.add_finding(Finding(
             title="Information Disclosure: {}".format(desc),
             severity=Severity.LOW,
-            description="The '{}' header reveals server information. Attackers use this to identify known vulnerabilities in specific software versions.".format(header_name),
+            description="The '{}' header reveals server information. Attackers use this to identify known vulnerabilities in specific software versions.".format(
+                header_name),
             evidence="{}: {}\n\nFull response headers:\n{}".format(header_name, value, all_headers_str),
             remediation="Remove or suppress the '{}' header in production.".format(header_name),
             url=session.config.target,
@@ -215,7 +216,8 @@ def run(session: ScanSession) -> None:
             cookie_checks.append((
                 "Cookie Missing Secure Flag: {}".format(cookie.name),
                 Severity.MEDIUM,
-                "Session cookie '{}' is not marked Secure. It will be transmitted over unencrypted HTTP, exposing it to network sniffing.".format(cookie.name),
+                "Session cookie '{}' is not marked Secure. It will be transmitted over unencrypted HTTP, exposing it to network sniffing.".format(
+                    cookie.name),
                 "Add the Secure flag to all session cookies.",
                 "CWE-614",
                 "Add Secure flag when setting '{c}':\n"
@@ -228,7 +230,8 @@ def run(session: ScanSession) -> None:
             cookie_checks.append((
                 "Cookie Missing HttpOnly Flag: {}".format(cookie.name),
                 Severity.MEDIUM,
-                "Session cookie '{}' is not marked HttpOnly. JavaScript can access this cookie, making it vulnerable to XSS-based session theft.".format(cookie.name),
+                "Session cookie '{}' is not marked HttpOnly. JavaScript can access this cookie, making it vulnerable to XSS-based session theft.".format(
+                    cookie.name),
                 "Add the HttpOnly flag to session cookies.",
                 "CWE-1004",
                 "Add HttpOnly flag when setting '{c}':\n"
@@ -241,7 +244,8 @@ def run(session: ScanSession) -> None:
             cookie_checks.append((
                 "Cookie Missing SameSite Attribute: {}".format(cookie.name),
                 Severity.LOW,
-                "Session cookie '{}' lacks the SameSite attribute, making it susceptible to CSRF attacks.".format(cookie.name),
+                "Session cookie '{}' lacks the SameSite attribute, making it susceptible to CSRF attacks.".format(
+                    cookie.name),
                 "Add 'SameSite=Strict' or 'SameSite=Lax' to cookies.",
                 "CWE-1275",
                 "Add SameSite attribute when setting '{c}':\n"

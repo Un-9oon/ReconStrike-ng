@@ -1,11 +1,10 @@
 import threading
-import time
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import urlparse, parse_qs, urlencode
 
 import requests
 
 from scanner.log import logger
-from scanner.core import Finding, Severity, ScanSession, build_curl
+from scanner.core import Finding, Severity, ScanSession
 
 
 CONCURRENT_REQUEST_COUNT = 10
@@ -96,7 +95,7 @@ def _analyze_race_results(results):
     unique_hashes = set(body_hashes)
 
     avg_len = sum(lengths) / len(lengths) if lengths else 0
-    max_dev = max(abs(l - avg_len) for l in lengths) if lengths else 0
+    max_dev = max(abs(ln - avg_len) for ln in lengths) if lengths else 0
 
     return {
         "success_count": success_count,

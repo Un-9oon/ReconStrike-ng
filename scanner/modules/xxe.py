@@ -43,7 +43,7 @@ XXE_DETECTION = (
 
 def _validate_match(text: str, validate_type: str | None) -> bool:
     if validate_type == "passwd":
-        lines = [l for l in text.split("\n") if re.match(r"^[a-z_][\w-]*:[^:]*:\d+:\d+:", l)]
+        lines = [ln for ln in text.split("\n") if re.match(r"^[a-z_][\w-]*:[^:]*:\d+:\d+:", ln)]
         return len(lines) >= 3
     if validate_type == "winini":
         return "[fonts]" in text.lower() and "[extensions]" in text.lower()
@@ -132,7 +132,7 @@ def _check_xml_endpoints(session: ScanSession):
             continue
 
         baseline_text = resp.text
-        parsed = urlparse(url)
+        urlparse(url)
 
         for entry in XXE_PAYLOADS:
             test_resp = session.post(url, data=entry["payload"], headers={"Content-Type": "application/xml"})
@@ -159,7 +159,7 @@ def _check_content_type_switch(session: ScanSession):
         baseline_resp = session.post(form["action"], data=baseline_data)
         baseline_text = baseline_resp.text if baseline_resp else ""
 
-        source_url = form.get("source_url", form["action"])
+        form.get("source_url", form["action"])
         input_names = [i.get("name", "") for i in form["inputs"] if i.get("name")]
 
         for entry in XXE_PAYLOADS[:2]:
@@ -213,7 +213,7 @@ def _check_file_upload_xxe(session: ScanSession):
 
             if not re.search(r"root:[x*]:0:0:", resp.text):
                 continue
-            lines = [l for l in resp.text.split("\n") if re.match(r"^[a-z_][\w-]*:[^:]*:\d+:\d+:", l)]
+            lines = [ln for ln in resp.text.split("\n") if re.match(r"^[a-z_][\w-]*:[^:]*:\d+:\d+:", ln)]
             if len(lines) < 3:
                 continue
 

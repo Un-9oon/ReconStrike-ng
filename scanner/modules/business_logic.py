@@ -189,7 +189,8 @@ def _test_negative_values_url(session, url):
                 ).format(parsed.path, p=param),
                 affected_component="Business logic validation for {}".format(parsed.path),
                 references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/10-Business_Logic_Testing/",
-                detection_method="Submitted negative value ({}) for parameter '{}' and detected financial/quantity context in the response indicating the value was processed.".format(payload, param),
+                detection_method="Submitted negative value ({}) for parameter '{}' and detected financial/quantity context in the response indicating the value was processed.".format(
+                    payload, param),
             ))
             return
 
@@ -284,7 +285,8 @@ def _test_overflow_values_url(session, url):
                 ).format(parsed.path, p=param),
                 affected_component="Numeric input handling in {}".format(parsed.path),
                 references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/10-Business_Logic_Testing/ | https://cwe.mitre.org/data/definitions/190.html",
-                detection_method="Submitted overflow value ({} - {}) for parameter '{}' and detected numeric error in response absent from baseline.".format(payload, description, param),
+                detection_method="Submitted overflow value ({} - {}) for parameter '{}' and detected numeric error in response absent from baseline.".format(
+                    payload, description, param),
             ))
             return
 
@@ -393,7 +395,8 @@ def _test_negative_values_form(session, form):
                 ).format(method.upper(), action, n=name),
                 affected_component="Form processing logic at {}".format(action),
                 references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/10-Business_Logic_Testing/",
-                detection_method="Submitted negative value ({}) in form field '{}' and detected financial/quantity indicator in the response.".format(payload, name),
+                detection_method="Submitted negative value ({}) in form field '{}' and detected financial/quantity indicator in the response.".format(
+                    payload, name),
             ))
             return
 
@@ -463,7 +466,8 @@ def _test_negative_values_form(session, form):
                 ).format(method.upper(), action, n=name),
                 affected_component="Numeric processing in form handler for {}".format(action),
                 references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/10-Business_Logic_Testing/ | https://cwe.mitre.org/data/definitions/190.html",
-                detection_method="Submitted overflow value ({}) in form field '{}' and detected numeric error in response absent from baseline.".format(payload, name),
+                detection_method="Submitted overflow value ({}) in form field '{}' and detected numeric error in response absent from baseline.".format(
+                    payload, name),
             ))
             return
 
@@ -575,7 +579,8 @@ def _test_parameter_removal(session, form):
             ).format(method.upper(), action, p=param_to_remove),
             affected_component="Input validation in form handler for {}".format(action),
             references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/10-Business_Logic_Testing/",
-            detection_method="Removed the security-relevant parameter '{}' from the form submission and observed a different (potentially bypassed) response.".format(param_to_remove),
+            detection_method="Removed the security-relevant parameter '{}' from the form submission and observed a different (potentially bypassed) response.".format(
+                param_to_remove),
         ))
 
 
@@ -688,7 +693,8 @@ def _test_sequential_ids(session):
                     ).format(parsed.path, p=param_name),
                     affected_component="Access control for {}".format(parsed.path),
                     references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/10-Business_Logic_Testing/ | https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html",
-                    detection_method="Detected sequential numeric ID in parameter '{}' (value: {}), tested adjacent ID ({}), and received a valid response with different content.".format(param_name, original_id, adj_id),
+                    detection_method="Detected sequential numeric ID in parameter '{}' (value: {}), tested adjacent ID ({}), and received a valid response with different content.".format(
+                        param_name, original_id, adj_id),
                 ))
                 break
 

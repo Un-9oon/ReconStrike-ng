@@ -1,5 +1,5 @@
 import re
-from scanner.core import Finding, Severity, ScanSession
+from scanner.core import Severity, ScanSession
 
 SECRET_PATTERNS = {
     "AWS Access Key ID": r"(?i)AKIA[0-9A-Z]{16}",

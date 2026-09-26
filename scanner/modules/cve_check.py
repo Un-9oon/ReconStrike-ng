@@ -310,7 +310,8 @@ def run(session: ScanSession) -> None:
                 module="cve_check",
                 cwe="CWE-1035",
                 confirmed=False,
-                detection_method="Version fingerprinting matched against built-in CVE database (CVSS {cvss})".format(cvss=cvss),
+                detection_method="Version fingerprinting matched against built-in CVE database (CVSS {cvss})".format(
+                    cvss=cvss),
                 curl_command=_build_curl("GET", target),
                 reproduction_steps=(
                     "1. Send GET request to {target}\n"
@@ -385,7 +386,8 @@ def run(session: ScanSession) -> None:
                 "(CVE-2021-44228). Affected headers: {headers}. "
                 "This finding requires manual verification with an out-of-band callback server."
             ).format(headers=affected_headers),
-            evidence="Anomalous responses when injecting JNDI payloads in headers: {headers}".format(headers=affected_headers),
+            evidence="Anomalous responses when injecting JNDI payloads in headers: {headers}".format(
+                headers=affected_headers),
             remediation=(
                 "Update Log4j to version 2.17.1 or later. As immediate mitigations: "
                 "set log4j2.formatMsgNoLookups=true, remove JndiLookup class from classpath, "

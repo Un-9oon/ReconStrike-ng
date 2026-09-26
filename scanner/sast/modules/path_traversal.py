@@ -1,5 +1,5 @@
 import re
-from scanner.core import Finding, Severity, ScanSession
+from scanner.core import Severity, ScanSession
 
 PATH_TRAVERSAL_PATTERNS = [
     ("open() with f-string interpolation", r"""\bopen\(\s*f['"].*\{"""),

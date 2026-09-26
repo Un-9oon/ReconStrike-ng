@@ -1,4 +1,3 @@
-from urllib.parse import urlparse
 
 from scanner.core import Finding, Severity, ScanSession
 from scanner.log import logger

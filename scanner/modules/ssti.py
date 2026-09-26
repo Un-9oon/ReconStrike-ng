@@ -166,7 +166,8 @@ def _test_param_url(session: ScanSession, url: str, param: str, original: str):
 
         if expected in resp.text:
             if _confirm_ssti(session, url, param, "get", None, confirms, is_form=False):
-                dev_fix = ENGINE_DEVELOPER_FIX.get(engine_name, "Do not pass user input into template engine source code.")
+                dev_fix = ENGINE_DEVELOPER_FIX.get(
+                    engine_name, "Do not pass user input into template engine source code.")
                 session.add_finding(Finding(
                     title=f"Server-Side Template Injection ({engine_name})",
                     severity=Severity.CRITICAL,
@@ -271,7 +272,8 @@ def _test_form(session: ScanSession, form: dict):
                     method = form["method"].upper()
                     data_str = "&".join(f"{k}={v}" for k, v in test_data.items())
                     source_url = form.get("source_url", form["action"])
-                    dev_fix = ENGINE_DEVELOPER_FIX.get(engine_name, "Do not pass user input into template engine source code.")
+                    dev_fix = ENGINE_DEVELOPER_FIX.get(
+                        engine_name, "Do not pass user input into template engine source code.")
 
                     session.add_finding(Finding(
                         title=f"Server-Side Template Injection in Form ({engine_name})",
@@ -314,7 +316,8 @@ def _test_form(session: ScanSession, form: dict):
                         request_method=method,
                         request_body=data_str,
                         response_status=resp2.status_code,
-                        curl_command=_build_curl(method, form["action"], data=data_str) if method == "POST" else _build_curl("GET", f"{form['action']}?{data_str}"),
+                        curl_command=_build_curl(method, form["action"], data=data_str) if method == "POST" else _build_curl(
+                            "GET", f"{form['action']}?{data_str}"),
                         reproduction_steps=(
                             f"1. Navigate to the page containing the form: {source_url}\n"
                             f"2. Locate the form that submits to: {form['action']}\n"

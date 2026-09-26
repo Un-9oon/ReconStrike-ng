@@ -273,7 +273,8 @@ def _check_form_sqli(session: ScanSession, form: dict):
                         continue
                     snippet = _extract_error_snippet(resp.text, pattern)
                     data_str = "&".join(f"{k}={v}" for k, v in post_data.items())
-                    curl_cmd = _build_curl(method, form["action"], data=data_str) if method == "POST" else _build_curl("GET", f"{form['action']}?{data_str}")
+                    curl_cmd = _build_curl(method, form["action"], data=data_str) if method == "POST" else _build_curl(
+                        "GET", f"{form['action']}?{data_str}")
                     session.add_finding(Finding(
                         title=f"SQL Injection in Form (Error-Based) - {db_type}",
                         severity=Severity.CRITICAL,

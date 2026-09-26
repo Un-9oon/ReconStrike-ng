@@ -8,14 +8,22 @@ from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
 
 UPLOAD_PAYLOADS = [
-    {"name": "PHP Web Shell", "filename": "test.php", "content": '<?php echo "VULNSCAN_UPLOAD_" . "CONFIRMED"; ?>', "content_type": "application/x-php", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "PHP file execution"},
-    {"name": "PHP Double Extension", "filename": "test.php.jpg", "content": '<?php echo "VULNSCAN_UPLOAD_" . "CONFIRMED"; ?>', "content_type": "image/jpeg", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "Double extension bypass"},
-    {"name": "PHP Null Byte", "filename": "test.php%00.jpg", "content": '<?php echo "VULNSCAN_UPLOAD_" . "CONFIRMED"; ?>', "content_type": "image/jpeg", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "Null byte extension bypass"},
-    {"name": "JSP Upload", "filename": "test.jsp", "content": '<%= "VULNSCAN_UPLOAD_" + "CONFIRMED" %>', "content_type": "application/octet-stream", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "JSP file execution"},
-    {"name": "ASP Upload", "filename": "test.asp", "content": '<% Response.Write("VULNSCAN_UPLOAD_" & "CONFIRMED") %>', "content_type": "application/octet-stream", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "ASP file execution"},
-    {"name": "SVG XSS", "filename": "test.svg", "content": '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><script>alert("VULNSCAN_XSS")</script></svg>', "content_type": "image/svg+xml", "indicator": 'alert("VULNSCAN_XSS")', "severity": Severity.HIGH, "desc": "SVG with embedded JavaScript"},
-    {"name": "HTML Upload", "filename": "test.html", "content": '<html><body><script>document.write("VULNSCAN_UPLOAD_CONFIRMED")</script></body></html>', "content_type": "text/html", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.HIGH, "desc": "HTML file with JavaScript"},
-    {"name": ".htaccess Upload", "filename": ".htaccess", "content": 'AddType application/x-httpd-php .jpg', "content_type": "application/octet-stream", "indicator": None, "severity": Severity.CRITICAL, "desc": ".htaccess override"},
+    {"name": "PHP Web Shell", "filename": "test.php", "content": '<?php echo "VULNSCAN_UPLOAD_" . "CONFIRMED"; ?>',
+        "content_type": "application/x-php", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "PHP file execution"},
+    {"name": "PHP Double Extension", "filename": "test.php.jpg", "content": '<?php echo "VULNSCAN_UPLOAD_" . "CONFIRMED"; ?>',
+        "content_type": "image/jpeg", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "Double extension bypass"},
+    {"name": "PHP Null Byte", "filename": "test.php%00.jpg", "content": '<?php echo "VULNSCAN_UPLOAD_" . "CONFIRMED"; ?>',
+        "content_type": "image/jpeg", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "Null byte extension bypass"},
+    {"name": "JSP Upload", "filename": "test.jsp", "content": '<%= "VULNSCAN_UPLOAD_" + "CONFIRMED" %>', "content_type": "application/octet-stream",
+        "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "JSP file execution"},
+    {"name": "ASP Upload", "filename": "test.asp", "content": '<% Response.Write("VULNSCAN_UPLOAD_" & "CONFIRMED") %>', "content_type": "application/octet-stream",
+     "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.CRITICAL, "desc": "ASP file execution"},
+    {"name": "SVG XSS", "filename": "test.svg",
+        "content": '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><script>alert("VULNSCAN_XSS")</script></svg>', "content_type": "image/svg+xml", "indicator": 'alert("VULNSCAN_XSS")', "severity": Severity.HIGH, "desc": "SVG with embedded JavaScript"},
+    {"name": "HTML Upload", "filename": "test.html", "content": '<html><body><script>document.write("VULNSCAN_UPLOAD_CONFIRMED")</script></body></html>',
+     "content_type": "text/html", "indicator": "VULNSCAN_UPLOAD_CONFIRMED", "severity": Severity.HIGH, "desc": "HTML file with JavaScript"},
+    {"name": ".htaccess Upload", "filename": ".htaccess", "content": 'AddType application/x-httpd-php .jpg',
+        "content_type": "application/octet-stream", "indicator": None, "severity": Severity.CRITICAL, "desc": ".htaccess override"},
 ]
 
 _DETECTION = (
@@ -55,7 +63,8 @@ def run(session: ScanSession) -> None:
 
                 upload_confirmed, uploaded_url = False, ""
                 url_patterns = [
-                    r'(?:src|href|url|path|file)\s*[=:]\s*["\']?([^"\'>\s]*{esc}[^"\'>\s]*)'.format(esc=re.escape(filename)),
+                    r'(?:src|href|url|path|file)\s*[=:]\s*["\']?([^"\'>\s]*{esc}[^"\'>\s]*)'.format(
+                        esc=re.escape(filename)),
                     r'["\']([^"\']*uploads?[^"\']*{esc}[^"\']*)["\']'.format(esc=re.escape(marker)),
                     r'["\']([^"\']*files?[^"\']*{esc}[^"\']*)["\']'.format(esc=re.escape(marker)),
                 ]
@@ -148,7 +157,8 @@ def run(session: ScanSession) -> None:
                                 title="File Upload Accepts .htaccess",
                                 severity=Severity.HIGH,
                                 description=".htaccess file was accepted by the upload handler, potentially allowing Apache configuration override.",
-                                evidence="Uploaded .htaccess, server returned {} without error.".format(resp.status_code),
+                                evidence="Uploaded .htaccess, server returned {} without error.".format(
+                                    resp.status_code),
                                 remediation="Block uploads of server configuration files (.htaccess, web.config, .env).",
                                 url=source_url,
                                 module="file_upload",

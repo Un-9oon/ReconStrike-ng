@@ -2,7 +2,7 @@ import re
 from urllib.parse import urlparse, urljoin
 
 from scanner.log import logger
-from scanner.core import Finding, Severity, ScanSession, build_curl
+from scanner.core import Finding, Severity, ScanSession
 
 
 COMMON_WS_PATHS = [
@@ -156,7 +156,7 @@ def _test_origin_validation(session, endpoint):
             if resp.status_code == 101:
                 origin_accepted = True
             elif resp.status_code == legit_resp.status_code:
-                legit_acao = legit_resp.headers.get("Access-Control-Allow-Origin", "")
+                legit_resp.headers.get("Access-Control-Allow-Origin", "")
                 evil_acao = resp.headers.get("Access-Control-Allow-Origin", "")
 
                 if evil_acao == "*" or evil_acao == evil_origin:

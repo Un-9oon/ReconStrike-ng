@@ -15,20 +15,26 @@ URL_PARAMS = [
 ]
 
 SSRF_PAYLOADS = [
-    {"payload": "http://127.0.0.1", "indicators": [r"<html", r"<title>", r"localhost", r"It works"], "desc": "Direct localhost access"},
+    {"payload": "http://127.0.0.1", "indicators": [r"<html", r"<title>",
+                                                   r"localhost", r"It works"], "desc": "Direct localhost access"},
     {"payload": "http://127.0.0.1:22", "indicators": [r"SSH-", r"OpenSSH"], "desc": "Internal port probing (SSH)"},
-    {"payload": "http://127.0.0.1:3306", "indicators": [r"mysql", r"MariaDB", r"native_password"], "desc": "Internal port probing (MySQL)"},
+    {"payload": "http://127.0.0.1:3306", "indicators": [r"mysql", r"MariaDB",
+                                                        r"native_password"], "desc": "Internal port probing (MySQL)"},
     {"payload": "http://[::1]", "indicators": [r"<html", r"<title>"], "desc": "IPv6 localhost bypass"},
     {"payload": "http://0x7f000001", "indicators": [r"<html", r"<title>"], "desc": "Hex IP bypass"},
     {"payload": "http://0177.0.0.1", "indicators": [r"<html", r"<title>"], "desc": "Octal IP bypass"},
-    {"payload": "http://169.254.169.254/latest/meta-data/", "indicators": [r"ami-id", r"instance-id", r"local-hostname", r"iam"], "desc": "AWS metadata endpoint"},
-    {"payload": "http://169.254.169.254/computeMetadata/v1/", "indicators": [r"project", r"attributes"], "desc": "GCP metadata endpoint"},
-    {"payload": "http://169.254.169.254/metadata/instance", "indicators": [r"compute", r"vmId"], "desc": "Azure metadata endpoint"},
+    {"payload": "http://169.254.169.254/latest/meta-data/",
+        "indicators": [r"ami-id", r"instance-id", r"local-hostname", r"iam"], "desc": "AWS metadata endpoint"},
+    {"payload": "http://169.254.169.254/computeMetadata/v1/",
+        "indicators": [r"project", r"attributes"], "desc": "GCP metadata endpoint"},
+    {"payload": "http://169.254.169.254/metadata/instance",
+        "indicators": [r"compute", r"vmId"], "desc": "Azure metadata endpoint"},
     {"payload": "file:///etc/passwd", "indicators": [r"root:.*?:0:0"], "desc": "File scheme access"},
-    {"payload": "dict://127.0.0.1:6379/INFO", "indicators": [r"redis_version", r"connected_clients"], "desc": "Redis via dict:// protocol"},
-    {"payload": "gopher://127.0.0.1:6379/_INFO", "indicators": [r"redis_version"], "desc": "Redis via gopher:// protocol"},
+    {"payload": "dict://127.0.0.1:6379/INFO",
+        "indicators": [r"redis_version", r"connected_clients"], "desc": "Redis via dict:// protocol"},
+    {"payload": "gopher://127.0.0.1:6379/_INFO",
+        "indicators": [r"redis_version"], "desc": "Redis via gopher:// protocol"},
 ]
-
 
 
 def _get_baseline(session: ScanSession, url: str, param: str, original: str) -> str:
@@ -55,7 +61,8 @@ def _check_param(session: ScanSession, url: str, param: str, original: str):
         for indicator in entry["indicators"]:
             if re.search(indicator, resp.text, re.IGNORECASE):
                 if not re.search(indicator, baseline, re.IGNORECASE):
-                    severity = Severity.CRITICAL if ("169.254" in entry["payload"] or "metadata" in entry["payload"] or "file:///" in entry["payload"]) else Severity.HIGH
+                    severity = Severity.CRITICAL if (
+                        "169.254" in entry["payload"] or "metadata" in entry["payload"] or "file:///" in entry["payload"]) else Severity.HIGH
 
                     curl_cmd = build_curl("GET", test_url)
                     session.add_finding(Finding(
@@ -136,8 +143,10 @@ def _check_param(session: ScanSession, url: str, param: str, original: str):
         session.add_finding(Finding(
             title="Potential SSRF (Time-Based)",
             severity=Severity.MEDIUM,
-            description="Parameter '{}' shows consistent timing difference when targeting internal IPs, suggesting the server attempts to connect.".format(param),
-            evidence="Both requests to internal IP (10.255.255.1) exceeded baseline by >5s.\nBaseline max: {:.2f}s".format(max(baseline_times)),
+            description="Parameter '{}' shows consistent timing difference when targeting internal IPs, suggesting the server attempts to connect.".format(
+                param),
+            evidence="Both requests to internal IP (10.255.255.1) exceeded baseline by >5s.\nBaseline max: {:.2f}s".format(
+                max(baseline_times)),
             remediation="Validate and whitelist allowed URLs. Block internal network access.",
             url=url,
             module="ssrf",

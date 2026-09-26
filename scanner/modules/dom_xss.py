@@ -431,7 +431,7 @@ def _test_page(session, url):
     inline_scripts = _extract_js_from_html(body)
     if inline_scripts:
         _analyze_js(session, "\n".join(inline_scripts), url,
-                     "inline scripts at {}".format(parsed.path))
+                    "inline scripts at {}".format(parsed.path))
 
     # Only analyze same-origin linked scripts
     target_host = parsed.netloc
@@ -446,7 +446,7 @@ def _test_page(session, url):
             ct = js_resp.headers.get("Content-Type", "")
             if "javascript" in ct or "text/" in ct:
                 _analyze_js(session, js_resp.text, url,
-                             "linked script {}".format(js_parsed.path))
+                            "linked script {}".format(js_parsed.path))
         except (OSError, ValueError) as e:
             logger.debug("dom_xss _test_page: request failed: %s", e)
 

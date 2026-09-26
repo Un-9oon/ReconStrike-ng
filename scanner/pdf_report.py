@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fpdf import FPDF
 
-from scanner.core import ScanSession, Severity, Finding
+from scanner.core import ScanSession, Severity
 from scanner import __version__
 
 SEVERITY_COLORS = {
@@ -126,6 +126,8 @@ class ReconStrikePDF(FPDF):
         for val, w in values:
             self.cell(w, 6, val[:int(w / 1.8)], border=1, fill=fill, align="L")
         self.ln()
+
+
 def generate_pdf_report(session: ScanSession, output_path: str, compliance_data: dict = None) -> str:
     output_path = os.path.realpath(output_path)
     findings = sorted(session.findings, key=lambda f: f.severity.score, reverse=True)
@@ -147,7 +149,8 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     pdf.cell(0, 15, "Security Assessment Report", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 12)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 8, "ReconStrike — Advanced Web & Network Vulnerability Assessment", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, "ReconStrike — Advanced Web & Network Vulnerability Assessment",
+             align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     pdf.set_draw_color(59, 130, 246)
     pdf.set_line_width(0.8)
@@ -595,6 +598,8 @@ def generate_pdf_report(session: ScanSession, output_path: str, compliance_data:
     pdf.output(output_path)
     os.chmod(output_path, 0o600)
     return output_path
+
+
 def _calculate_risk_score(findings: list) -> int:
     if not findings:
         return 0
@@ -610,6 +615,8 @@ def _calculate_risk_score(findings: list) -> int:
         if score > max_score:
             max_score = score
     return max_score
+
+
 def _risk_label(score: int) -> str:
     if score >= 75:
         return "CRITICAL"
@@ -620,6 +627,8 @@ def _risk_label(score: int) -> str:
     if score > 0:
         return "LOW"
     return "NONE"
+
+
 def _risk_color(score: int) -> tuple:
     if score >= 75:
         return (139, 0, 0)

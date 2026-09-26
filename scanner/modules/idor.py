@@ -131,8 +131,10 @@ def _check_param_idor(session, url, param, original):
         session.add_finding(Finding(
             title="Potential IDOR: Sequential ID Accessible",
             severity=Severity.MEDIUM,
-            description="Parameter '{}' returns different data with PII when ID is changed from {} to {}.".format(param, original, test_id),
-            evidence="Original ID: {}, Test ID: {}\nBoth returned HTTP 200 with different content containing PII.".format(original, test_id),
+            description="Parameter '{}' returns different data with PII when ID is changed from {} to {}.".format(
+                param, original, test_id),
+            evidence="Original ID: {}, Test ID: {}\nBoth returned HTTP 200 with different content containing PII.".format(
+                original, test_id),
             remediation="Verify server-side authorization. Use UUIDs instead of sequential IDs.",
             url=url,
             module="idor",
@@ -170,8 +172,10 @@ def _check_path_idor(session, url):
             session.add_finding(Finding(
                 title="Potential IDOR via URL Path",
                 severity=Severity.MEDIUM,
-                description="URL path contains sequential ID that returns different data with PII when modified from {} to {}.".format(original_id, test_id),
-                evidence="Original: {}\nModified: {}\nBoth returned HTTP 200 with different PII-containing content.".format(url, test_url),
+                description="URL path contains sequential ID that returns different data with PII when modified from {} to {}.".format(
+                    original_id, test_id),
+                evidence="Original: {}\nModified: {}\nBoth returned HTTP 200 with different PII-containing content.".format(
+                    url, test_url),
                 remediation="Implement authorization checks. Use non-guessable identifiers (UUIDs).",
                 url=url,
                 module="idor",

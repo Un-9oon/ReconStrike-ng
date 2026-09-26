@@ -5,7 +5,6 @@ to evade blocking during scans. Wired into ScanSession so block events
 trigger automatic identity switches.
 """
 
-import logging
 import os
 import platform
 import random
@@ -67,7 +66,6 @@ _UA_POOL = [
     ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Vivaldi/6.7.3329.35", "chrome120"),
     ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Vivaldi/6.7.3329.21", "chrome120"),
 ]
-
 
 
 @dataclass
@@ -253,7 +251,7 @@ def _get_current_ip_via_tor(socks_host: str, socks_port: int) -> str:
     try:
         import requests as _req
         proxies = {"http": "socks5h://{}:{}".format(socks_host, socks_port),
-                    "https": "socks5h://{}:{}".format(socks_host, socks_port)}
+                   "https": "socks5h://{}:{}".format(socks_host, socks_port)}
         resp = _req.get("https://api.ipify.org?format=text", proxies=proxies, timeout=10)
         if resp.status_code == 200:
             return resp.text.strip()
@@ -665,7 +663,7 @@ class IdentityManager:
 
         if self._state.user_agent:
             session_obj.headers["User-Agent"] = self._state.user_agent
-        
+
         if self._state.tls_impersonate:
             try:
                 session_obj.impersonate = self._state.tls_impersonate

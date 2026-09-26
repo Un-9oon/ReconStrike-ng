@@ -180,7 +180,8 @@ def _test_url_params(session, url):
                     ).format(path=parsed.path),
                     affected_component="LDAP query construction in route handler for {}".format(parsed.path),
                     references="https://owasp.org/www-community/attacks/LDAP_Injection | https://cheatsheetseries.owasp.org/cheatsheets/LDAP_Injection_Prevention_Cheat_Sheet.html",
-                    detection_method="Injected LDAP metacharacters ({}) into URL parameter and detected LDAP-specific error message ({}) in response absent from baseline.".format(description, error_desc),
+                    detection_method="Injected LDAP metacharacters ({}) into URL parameter and detected LDAP-specific error message ({}) in response absent from baseline.".format(
+                        description, error_desc),
                 ))
                 return
 
@@ -243,7 +244,7 @@ def _test_forms(session, form):
     method = form.get("method", "post").lower()
     inputs = form.get("inputs", [])
     source_url = form.get("source_url", action)
-    parsed = urlparse(action)
+    urlparse(action)
 
     baseline_data = {}
     for inp in inputs:
@@ -335,7 +336,8 @@ def _test_forms(session, form):
                     ).format(method=method.upper(), action=action),
                     affected_component="LDAP authentication/query in form handler for {}".format(action),
                     references="https://owasp.org/www-community/attacks/LDAP_Injection | https://cheatsheetseries.owasp.org/cheatsheets/LDAP_Injection_Prevention_Cheat_Sheet.html",
-                    detection_method="Injected LDAP metacharacters ({}) into form field and detected LDAP error message ({}) in response absent from baseline.".format(description, error_desc),
+                    detection_method="Injected LDAP metacharacters ({}) into form field and detected LDAP error message ({}) in response absent from baseline.".format(
+                        description, error_desc),
                 ))
                 return
 
@@ -391,7 +393,8 @@ def _test_forms(session, form):
                     ).format(action=action),
                     affected_component="LDAP authentication in form handler for {}".format(action),
                     references="https://owasp.org/www-community/attacks/LDAP_Injection | https://book.hacktricks.xyz/pentesting-web/ldap-injection",
-                    detection_method="Injected LDAP metacharacters ({}) into login form and detected authentication success indicators ({}) absent from baseline.".format(description, auth_desc),
+                    detection_method="Injected LDAP metacharacters ({}) into login form and detected authentication success indicators ({}) absent from baseline.".format(
+                        description, auth_desc),
                 ))
                 return
 

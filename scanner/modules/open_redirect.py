@@ -161,7 +161,8 @@ def _test_url_params(session, url):
                     ).format(path=parsed.path, param=param),
                     affected_component="Redirect handler for parameter '{}' in {}".format(param, parsed.path),
                     references="https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html | https://portswigger.net/web-security/ssrf#ssrf-with-whitelist-based-input-filters",
-                    detection_method="Injected external URL ({}) into redirect parameter '{}' and confirmed the server issued a {} redirect to the attacker-controlled domain.".format(description, param, resp.status_code),
+                    detection_method="Injected external URL ({}) into redirect parameter '{}' and confirmed the server issued a {} redirect to the attacker-controlled domain.".format(
+                        description, param, resp.status_code),
                 ))
                 return
 
@@ -225,7 +226,8 @@ def _test_url_params(session, url):
                         ).format(path=parsed.path),
                         affected_component="Client-side redirect in template for {}".format(parsed.path),
                         references="https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html",
-                        detection_method="Injected external URL ({}) into parameter '{}' and detected client-side redirect (meta refresh/JavaScript) to attacker domain in response body.".format(description, param),
+                        detection_method="Injected external URL ({}) into parameter '{}' and detected client-side redirect (meta refresh/JavaScript) to attacker domain in response body.".format(
+                            description, param),
                     ))
                     return
 
@@ -283,7 +285,8 @@ def _test_url_params(session, url):
                             ).format(path=parsed.path),
                             affected_component="Header construction in {}".format(parsed.path),
                             references="https://owasp.org/www-community/attacks/HTTP_Response_Splitting | https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html",
-                            detection_method="Injected CRLF characters with Location header ({}) and confirmed a redirect to attacker domain via injected header.".format(description),
+                            detection_method="Injected CRLF characters with Location header ({}) and confirmed a redirect to attacker domain via injected header.".format(
+                                description),
                         ))
                         return
 
@@ -363,7 +366,8 @@ def _test_path_based(session, url):
                 ).format(path=parsed.path, param=param),
                 affected_component="Hidden redirect parameter handling in {}".format(parsed.path),
                 references="https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html",
-                detection_method="Injected redirect parameter '{}' (not originally in the URL) with external URL and confirmed the server issued a redirect to the attacker domain.".format(param),
+                detection_method="Injected redirect parameter '{}' (not originally in the URL) with external URL and confirmed the server issued a redirect to the attacker domain.".format(
+                    param),
             ))
             return
 
@@ -416,7 +420,8 @@ def _test_path_based(session, url):
                     ).format(path=parsed.path),
                     affected_component="Client-side redirect via '{}' in {}".format(param, parsed.path),
                     references="https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html",
-                    detection_method="Injected redirect parameter '{}' with external URL and detected client-side redirect to attacker domain in response body.".format(param),
+                    detection_method="Injected redirect parameter '{}' with external URL and detected client-side redirect to attacker domain in response body.".format(
+                        param),
                 ))
                 return
 
@@ -426,7 +431,7 @@ def _test_forms(session, form):
     method = form.get("method", "post").lower()
     inputs = form.get("inputs", [])
     source_url = form.get("source_url", action)
-    parsed = urlparse(action)
+    urlparse(action)
 
     rp_lower = {rp.lower() for rp in REDIRECT_PARAMS}
     redirect_fields = [inp for inp in inputs if inp.get("name", "").lower() in rp_lower and inp.get("name")]
@@ -445,7 +450,8 @@ def _test_forms(session, form):
             test_data[name] = payload
 
             try:
-                resp = session.post(action, data=test_data, allow_redirects=False) if method == "post" else session.get(action, params=test_data, allow_redirects=False)
+                resp = session.post(action, data=test_data, allow_redirects=False) if method == "post" else session.get(
+                    action, params=test_data, allow_redirects=False)
             except (requests.RequestException, ValueError) as e:
                 logger.debug("open_redirect _test_forms: request failed: %s", e)
                 continue
@@ -512,7 +518,8 @@ def _test_forms(session, form):
                 ).format(method=method.upper(), action=action, name=name),
                 affected_component="Redirect handling via form field '{}' in {}".format(name, action),
                 references="https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html | https://portswigger.net/kb/issues/00500100_open-redirection-reflected",
-                detection_method="Set form field '{}' to external URL ({}) and confirmed the server issued a redirect to the attacker domain.".format(name, description),
+                detection_method="Set form field '{}' to external URL ({}) and confirmed the server issued a redirect to the attacker domain.".format(
+                    name, description),
             ))
             return
 

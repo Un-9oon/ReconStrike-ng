@@ -1,6 +1,6 @@
 import json
 import re
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import urlparse, urlunparse
 
 from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession

@@ -1,4 +1,4 @@
-from scanner.core import Finding, Severity, ScanSession
+from scanner.core import ScanSession
 
 WAF_SIGNATURES = {
     "Cloudflare": {

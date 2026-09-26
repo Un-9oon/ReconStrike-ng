@@ -1,3 +1,6 @@
+from scanner.identity_manager import IdentityManager, ANMConfig
+from scanner.log import logger
+from colorama import Fore
 import re
 import socket
 import time
@@ -10,14 +13,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 from urllib.parse import urlparse
-from functools import lru_cache
 
 import curl_cffi.requests as requests
 requests.RequestException = requests.errors.RequestsError
-from colorama import Fore, Style
-
-from scanner.log import logger
-from scanner.identity_manager import IdentityManager, ANMConfig
 
 
 class Severity(Enum):
@@ -83,7 +81,8 @@ def _redact_sensitive(text: str) -> str:
     if not text:
         return ""
     text = SENSITIVE_PARAM_PATTERNS.sub(r'\1=[REDACTED]', text)
-    text = re.sub(r'(Authorization:\s*)(Bearer|Basic)?\s*[A-Za-z0-9._~\-+/=]+', r'\1\2 [REDACTED]', text, flags=re.IGNORECASE)
+    text = re.sub(r'(Authorization:\s*)(Bearer|Basic)?\s*[A-Za-z0-9._~\-+/=]+',
+                  r'\1\2 [REDACTED]', text, flags=re.IGNORECASE)
     return text
 
 
@@ -202,6 +201,7 @@ def run_module_with_timeout(module, session: "ScanSession", timeout: int = MODUL
         ))
     finally:
         executor.shutdown(wait=False)
+
 
 PRIVATE_IP_RANGES = [
     ipaddress.ip_network("10.0.0.0/8"),

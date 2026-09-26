@@ -1,5 +1,4 @@
-import re
-from scanner.core import Finding, Severity, ScanSession
+from scanner.core import Severity, ScanSession
 
 DANGEROUS_PATTERNS = [
     # (description, regex, severity, language ext)

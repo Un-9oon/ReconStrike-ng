@@ -22,7 +22,8 @@ PASSWORD_RESET_PATTERNS = [
 ]
 
 LINK_REFLECTION_PATTERNS = [
-    re.compile(r'(href|src|action|url|link|redirect|location)\s*[=:]\s*["\']?https?://' + re.escape(EVIL_HOST), re.IGNORECASE),
+    re.compile(
+        r'(href|src|action|url|link|redirect|location)\s*[=:]\s*["\']?https?://' + re.escape(EVIL_HOST), re.IGNORECASE),
     re.compile(re.escape(EVIL_HOST), re.IGNORECASE),
 ]
 
@@ -71,9 +72,9 @@ def _check_host_in_response(body, headers_dict, evil_host):
         header_val = headers_dict.get(header_name, "")
         if evil_host.lower() in header_val.lower():
             findings.append({
-                "location": f"response header ({header_name})",
+                "location": "response header ({header_name})",
                 "in_link": True,
-                "snippet": f"{header_name}: {header_val}",
+                "snippet": "{header_name}: {header_val}",
             })
 
     return findings
@@ -82,7 +83,7 @@ def _check_host_in_response(body, headers_dict, evil_host):
 def _test_host_header_direct(session, url):
     """Test direct Host header manipulation."""
     parsed = urlparse(url)
-    original_host = parsed.netloc
+    parsed.netloc
 
     # Test 1: Replace Host header with evil host
     try:
@@ -115,9 +116,9 @@ def _test_host_header_direct(session, url):
             title="Host Header Injection (Direct Host Override)",
             severity=severity,
             description=(
-                f"The application at '{original_host}' reflects a manipulated Host header "
-                f"value in its response. When the Host header was set to '{EVIL_HOST}', "
-                f"the injected value appeared in the {reflection['location']}. "
+                "The application at '{original_host}' reflects a manipulated Host header "
+                "value in its response. When the Host header was set to '{EVIL_HOST}', "
+                "the injected value appeared in the {reflection['location']}. "
                 + (
                     "The injected host appears in a URL/link context, which could be "
                     "exploited for password reset poisoning, cache poisoning, or phishing."
@@ -127,13 +128,13 @@ def _test_host_header_direct(session, url):
                 )
             ),
             evidence=(
-                f"URL: {url}\n"
-                f"Original Host: {original_host}\n"
-                f"Injected Host: {EVIL_HOST}\n"
-                f"Reflection Location: {reflection['location']}\n"
-                f"In Link/URL Context: {reflection['in_link']}\n"
-                f"Response Status: {resp.status_code}\n"
-                f"Context: {reflection['snippet']}"
+                "URL: {url}\n"
+                "Original Host: {original_host}\n"
+                "Injected Host: {EVIL_HOST}\n"
+                "Reflection Location: {reflection['location']}\n"
+                "In Link/URL Context: {reflection['in_link']}\n"
+                "Response Status: {resp.status_code}\n"
+                "Context: {reflection['snippet']}"
             ),
             remediation=(
                 "1. Never use the Host header to generate URLs, links, or redirects.\n"
@@ -148,46 +149,46 @@ def _test_host_header_direct(session, url):
             module="host_header",
             cwe="CWE-644",
             confirmed=True,
-            location=f"Host header processing at {parsed.path}",
+            location="Host header processing at {parsed.path}",
             parameter="Host",
-            payload=f"Host: {EVIL_HOST}",
+            payload="Host: {EVIL_HOST}",
             request_method="GET",
-            request_headers=f"Host: {EVIL_HOST}",
+            request_headers="Host: {EVIL_HOST}",
             response_status=resp.status_code,
             curl_command=curl_cmd,
             reproduction_steps=(
-                f"1. Send a GET request to {url} with a manipulated Host header.\n"
-                f"2. Run: {curl_cmd}\n"
-                f"3. Examine the response for the injected host '{EVIL_HOST}'.\n"
-                f"4. Check the {reflection['location']} for the reflected value."
+                "1. Send a GET request to {url} with a manipulated Host header.\n"
+                "2. Run: {curl_cmd}\n"
+                "3. Examine the response for the injected host '{EVIL_HOST}'.\n"
+                "4. Check the {reflection['location']} for the reflected value."
             ),
             developer_fix=(
-                f"File: Application configuration or middleware.\n\n"
-                f"VULNERABLE pattern:\n"
-                f"  base_url = request.headers['Host']  # Attacker-controlled!\n"
-                f"  link = f'https://{{base_url}}/reset?token={{token}}'\n\n"
-                f"SECURE pattern:\n"
-                f"  # Use a hardcoded or config-based base URL\n"
-                f"  BASE_URL = os.environ.get('BASE_URL', 'https://{original_host}')\n"
-                f"  link = f'{{BASE_URL}}/reset?token={{token}}'\n\n"
-                f"  Nginx - reject unknown hosts:\n"
-                f"  server {{\n"
-                f"    listen 80 default_server;\n"
-                f"    return 444;  # Drop connections with unknown Host\n"
-                f"  }}\n"
-                f"  server {{\n"
-                f"    listen 80;\n"
-                f"    server_name {original_host};\n"
-                f"    ...\n"
-                f"  }}"
+                "File: Application configuration or middleware.\n\n"
+                "VULNERABLE pattern:\n"
+                "  base_url = request.headers['Host']  # Attacker-controlled!\n"
+                "  link = f'https://{{base_url}}/reset?token={{token}}'\n\n"
+                "SECURE pattern:\n"
+                "  # Use a hardcoded or config-based base URL\n"
+                "  BASE_URL = os.environ.get('BASE_URL', 'https://{original_host}')\n"
+                "  link = f'{{BASE_URL}}/reset?token={{token}}'\n\n"
+                "  Nginx - reject unknown hosts:\n"
+                "  server {{\n"
+                "    listen 80 default_server;\n"
+                "    return 444;  # Drop connections with unknown Host\n"
+                "  }}\n"
+                "  server {{\n"
+                "    listen 80;\n"
+                "    server_name {original_host};\n"
+                "    ...\n"
+                "  }}"
             ),
-            affected_component=f"Host header processing / URL generation at {parsed.netloc}",
+            affected_component="Host header processing / URL generation at {parsed.netloc}",
             references="https://portswigger.net/web-security/host-header | https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/17-Testing_for_Host_Header_Injection",
-            detection_method=f"Sent a request with 'Host: {EVIL_HOST}' and detected the injected host in the {reflection['location']} of the response.",
+            detection_method="Sent a request with 'Host: {EVIL_HOST}' and detected the injected host in the {reflection['location']} of the response.",
         ))
 
     # Test 2: Host header with port injection
-    injected_host = f"{original_host}@{EVIL_HOST}"
+    injected_host = "{original_host}@{EVIL_HOST}"
     try:
         resp = session.session.get(
             url,
@@ -212,17 +213,17 @@ def _test_host_header_direct(session, url):
                 title="Host Header Injection (@ Character Bypass)",
                 severity=Severity.HIGH,
                 description=(
-                    f"The application processes a Host header containing an '@' character "
-                    f"('{injected_host}'), which can be used to bypass host validation. "
-                    f"URL parsers may interpret the portion before '@' as credentials and "
-                    f"the portion after as the actual host, leading to routing-based SSRF."
+                    "The application processes a Host header containing an '@' character "
+                    "('{injected_host}'), which can be used to bypass host validation. "
+                    "URL parsers may interpret the portion before '@' as credentials and "
+                    "the portion after as the actual host, leading to routing-based SSRF."
                 ),
                 evidence=(
-                    f"URL: {url}\n"
-                    f"Injected Host: {injected_host}\n"
-                    f"Reflection Location: {reflection['location']}\n"
-                    f"Response Status: {resp.status_code}\n"
-                    f"Context: {reflection['snippet']}"
+                    "URL: {url}\n"
+                    "Injected Host: {injected_host}\n"
+                    "Reflection Location: {reflection['location']}\n"
+                    "Response Status: {resp.status_code}\n"
+                    "Context: {reflection['snippet']}"
                 ),
                 remediation=(
                     "1. Reject Host headers containing '@', ':', or other unexpected characters.\n"
@@ -234,36 +235,36 @@ def _test_host_header_direct(session, url):
                 module="host_header",
                 cwe="CWE-644",
                 confirmed=True,
-                location=f"Host header parsing at {parsed.path}",
+                location="Host header parsing at {parsed.path}",
                 parameter="Host",
-                payload=f"Host: {injected_host}",
+                payload="Host: {injected_host}",
                 request_method="GET",
-                request_headers=f"Host: {injected_host}",
+                request_headers="Host: {injected_host}",
                 response_status=resp.status_code,
                 curl_command=curl_cmd,
                 reproduction_steps=(
-                    f"1. Send a request with Host: {injected_host}\n"
-                    f"2. Run: {curl_cmd}\n"
-                    f"3. Observe '{EVIL_HOST}' reflected in the response."
+                    "1. Send a request with Host: {injected_host}\n"
+                    "2. Run: {curl_cmd}\n"
+                    "3. Observe '{EVIL_HOST}' reflected in the response."
                 ),
                 developer_fix=(
-                    f"Validate Host header strictly:\n"
-                    f"  if '@' in request.headers.get('Host', ''):\n"
-                    f"      abort(400, 'Invalid Host header')"
+                    "Validate Host header strictly:\n"
+                    "  if '@' in request.headers.get('Host', ''):\n"
+                    "      abort(400, 'Invalid Host header')"
                 ),
-                affected_component=f"Host header parsing at {parsed.netloc}",
+                affected_component="Host header parsing at {parsed.netloc}",
                 references="https://portswigger.net/web-security/host-header/exploiting",
-                detection_method=f"Injected Host header with '@' character ('{injected_host}') and detected the attacker-controlled portion reflected in the response.",
+                detection_method="Injected Host header with '@' character ('{injected_host}') and detected the attacker-controlled portion reflected in the response.",
             ))
 
 
 def _test_forwarded_headers(session, url):
     """Test X-Forwarded-Host and similar headers for host injection."""
-    parsed = urlparse(url)
+    urlparse(url)
 
     for header_name, header_desc in HOST_INJECTION_HEADERS:
         if header_name == "Forwarded":
-            header_value = f"host={EVIL_HOST_FQDN}"
+            header_value = "host={EVIL_HOST_FQDN}"
         else:
             header_value = EVIL_HOST_FQDN
 
@@ -294,26 +295,26 @@ def _test_forwarded_headers(session, url):
             severity = Severity.HIGH if reflection["in_link"] else Severity.MEDIUM
 
             session.add_finding(Finding(
-                title=f"Host Header Injection via {header_name}",
+                title="Host Header Injection via {header_name}",
                 severity=severity,
                 description=(
-                    f"The application at '{parsed.netloc}' reflects the value of the "
-                    f"'{header_name}' header in its response. When set to '{EVIL_HOST_FQDN}', "
-                    f"the injected value appeared in the {reflection['location']}. "
-                    f"This header is often trusted by applications behind reverse proxies "
-                    f"and can be exploited for password reset poisoning, web cache poisoning, "
-                    f"or open redirect attacks."
+                    "The application at '{parsed.netloc}' reflects the value of the "
+                    "'{header_name}' header in its response. When set to '{EVIL_HOST_FQDN}', "
+                    "the injected value appeared in the {reflection['location']}. "
+                    "This header is often trusted by applications behind reverse proxies "
+                    "and can be exploited for password reset poisoning, web cache poisoning, "
+                    "or open redirect attacks."
                 ),
                 evidence=(
-                    f"URL: {url}\n"
-                    f"Header: {header_name}: {header_value}\n"
-                    f"Reflection Location: {reflection['location']}\n"
-                    f"In Link/URL Context: {reflection['in_link']}\n"
-                    f"Response Status: {resp.status_code}\n"
-                    f"Context: {reflection['snippet']}"
+                    "URL: {url}\n"
+                    "Header: {header_name}: {header_value}\n"
+                    "Reflection Location: {reflection['location']}\n"
+                    "In Link/URL Context: {reflection['in_link']}\n"
+                    "Response Status: {resp.status_code}\n"
+                    "Context: {reflection['snippet']}"
                 ),
                 remediation=(
-                    f"1. Do not trust the '{header_name}' header for generating URLs or links.\n"
+                    "1. Do not trust the '{header_name}' header for generating URLs or links.\n"
                     "2. If behind a reverse proxy, configure it to strip or overwrite this header.\n"
                     "3. Use a hardcoded base URL from application configuration.\n"
                     "4. If the header is needed, validate it against an allowlist of known values.\n"
@@ -325,35 +326,35 @@ def _test_forwarded_headers(session, url):
                 module="host_header",
                 cwe="CWE-644",
                 confirmed=True,
-                location=f"{header_name} header processing at {parsed.path}",
+                location="{header_name} header processing at {parsed.path}",
                 parameter=header_name,
-                payload=f"{header_name}: {header_value}",
+                payload="{header_name}: {header_value}",
                 request_method="GET",
-                request_headers=f"{header_name}: {header_value}",
+                request_headers="{header_name}: {header_value}",
                 response_status=resp.status_code,
                 curl_command=curl_cmd,
                 reproduction_steps=(
-                    f"1. Send a GET request to {url} with the header: {header_name}: {header_value}\n"
-                    f"2. Run: {curl_cmd}\n"
-                    f"3. Examine the response for '{EVIL_HOST_FQDN}' in the {reflection['location']}."
+                    "1. Send a GET request to {url} with the header: {header_name}: {header_value}\n"
+                    "2. Run: {curl_cmd}\n"
+                    "3. Examine the response for '{EVIL_HOST_FQDN}' in the {reflection['location']}."
                 ),
                 developer_fix=(
-                    f"File: Application middleware or reverse proxy config.\n\n"
-                    f"VULNERABLE pattern:\n"
-                    f"  host = request.headers.get('{header_name}', request.host)\n"
-                    f"  link = f'https://{{host}}/action'\n\n"
-                    f"SECURE pattern:\n"
-                    f"  # Ignore {header_name} for URL generation\n"
-                    f"  BASE_URL = os.environ['BASE_URL']  # e.g., 'https://{parsed.netloc}'\n"
-                    f"  link = f'{{BASE_URL}}/action'\n\n"
-                    f"  Nginx - overwrite the header:\n"
-                    f"  proxy_set_header {header_name} $host;\n\n"
-                    f"  Apache - set a trusted value:\n"
-                    f"  RequestHeader set {header_name} \"{parsed.netloc}\""
+                    "File: Application middleware or reverse proxy config.\n\n"
+                    "VULNERABLE pattern:\n"
+                    "  host = request.headers.get('{header_name}', request.host)\n"
+                    "  link = f'https://{{host}}/action'\n\n"
+                    "SECURE pattern:\n"
+                    "  # Ignore {header_name} for URL generation\n"
+                    "  BASE_URL = os.environ['BASE_URL']  # e.g., 'https://{parsed.netloc}'\n"
+                    "  link = f'{{BASE_URL}}/action'\n\n"
+                    "  Nginx - overwrite the header:\n"
+                    "  proxy_set_header {header_name} $host;\n\n"
+                    "  Apache - set a trusted value:\n"
+                    "  RequestHeader set {header_name} \"{parsed.netloc}\""
                 ),
-                affected_component=f"{header_name} handling in {parsed.netloc}",
+                affected_component="{header_name} handling in {parsed.netloc}",
                 references="https://portswigger.net/web-security/host-header | https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/17-Testing_for_Host_Header_Injection",
-                detection_method=f"Sent '{header_name}: {header_value}' header and detected the injected host reflected in the {reflection['location']} of the response.",
+                detection_method="Sent '{header_name}: {header_value}' header and detected the injected host reflected in the {reflection['location']} of the response.",
             ))
             return  # One finding per URL is sufficient
 
@@ -366,7 +367,7 @@ def _test_password_reset_poisoning(session, form):
     action = form.get("action", "")
     inputs = form.get("inputs", [])
     source_url = form.get("source_url", action)
-    parsed = urlparse(action)
+    urlparse(action)
 
     # Build form data with a test email
     form_data = {}
@@ -391,7 +392,7 @@ def _test_password_reset_poisoning(session, form):
 
     for header_name, header_value, technique in headers_to_test:
         if header_name == "Forwarded":
-            actual_value = f"host={header_value}"
+            actual_value = "host={header_value}"
         else:
             actual_value = header_value
 
@@ -425,32 +426,32 @@ def _test_password_reset_poisoning(session, form):
         # Even without reflection, if the reset was accepted, it's noteworthy
         # because the reset email may contain the poisoned link
         if reflections:
-            reflection = reflections[0]
-            data_str = "&".join(f"{k}={v}" for k, v in form_data.items())
+            reflections[0]
+            data_str = "&".join("{k}={v}" for k, v in form_data.items())
             curl_cmd = build_curl(
                 "POST", action,
                 headers={header_name: actual_value},
                 data=data_str,
             )
             session.add_finding(Finding(
-                title=f"Password Reset Poisoning via {header_name}",
+                title="Password Reset Poisoning via {header_name}",
                 severity=Severity.HIGH,
                 description=(
-                    f"The password reset form at '{action}' is vulnerable to host header "
-                    f"poisoning via the '{header_name}' header. When a password reset was "
-                    f"submitted with '{header_name}: {actual_value}', the injected host "
-                    f"appeared in the {reflection['location']}. This strongly suggests the "
-                    f"password reset email will contain a link pointing to the attacker's "
-                    f"domain, allowing token theft when the victim clicks it."
+                    "The password reset form at '{action}' is vulnerable to host header "
+                    "poisoning via the '{header_name}' header. When a password reset was "
+                    "submitted with '{header_name}: {actual_value}', the injected host "
+                    "appeared in the {reflection['location']}. This strongly suggests the "
+                    "password reset email will contain a link pointing to the attacker's "
+                    "domain, allowing token theft when the victim clicks it."
                 ),
                 evidence=(
-                    f"Form Action: {action}\n"
-                    f"Header: {header_name}: {actual_value}\n"
-                    f"Technique: {technique}\n"
-                    f"Form Data: {form_data}\n"
-                    f"Response Status: {resp.status_code}\n"
-                    f"Reflection Location: {reflection['location']}\n"
-                    f"Context: {reflection['snippet']}"
+                    "Form Action: {action}\n"
+                    "Header: {header_name}: {actual_value}\n"
+                    "Technique: {technique}\n"
+                    "Form Data: {form_data}\n"
+                    "Response Status: {resp.status_code}\n"
+                    "Reflection Location: {reflection['location']}\n"
+                    "Context: {reflection['snippet']}"
                 ),
                 remediation=(
                     "1. NEVER use the Host header to construct password reset links.\n"
@@ -464,38 +465,38 @@ def _test_password_reset_poisoning(session, form):
                 module="host_header",
                 cwe="CWE-644",
                 confirmed=True,
-                location=f"Password reset form at {action}",
+                location="Password reset form at {action}",
                 parameter=header_name,
-                payload=f"{header_name}: {actual_value}",
+                payload="{header_name}: {actual_value}",
                 request_method="POST",
-                request_headers=f"{header_name}: {actual_value}",
+                request_headers="{header_name}: {actual_value}",
                 request_body=data_str,
                 response_status=resp.status_code,
                 curl_command=curl_cmd,
                 reproduction_steps=(
-                    f"1. Navigate to the password reset page: {source_url}\n"
-                    f"2. Enter a valid email address in the form.\n"
-                    f"3. Intercept the request and add the header: {header_name}: {actual_value}\n"
-                    f"4. Submit the form.\n"
-                    f"5. Run: {curl_cmd}\n"
-                    f"6. Check the password reset email for a link pointing to '{evil_host_for_check}'.\n"
-                    f"7. The attacker's server at '{evil_host_for_check}' would receive the reset token."
+                    "1. Navigate to the password reset page: {source_url}\n"
+                    "2. Enter a valid email address in the form.\n"
+                    "3. Intercept the request and add the header: {header_name}: {actual_value}\n"
+                    "4. Submit the form.\n"
+                    "5. Run: {curl_cmd}\n"
+                    "6. Check the password reset email for a link pointing to '{evil_host_for_check}'.\n"
+                    "7. The attacker's server at '{evil_host_for_check}' would receive the reset token."
                 ),
                 developer_fix=(
-                    f"File: Password reset handler for POST {action}.\n\n"
-                    f"VULNERABLE pattern:\n"
-                    f"  host = request.headers.get('{header_name}', request.host)\n"
-                    f"  reset_link = f'https://{{host}}/reset?token={{token}}'\n"
-                    f"  send_email(user.email, reset_link)\n\n"
-                    f"SECURE pattern:\n"
-                    f"  # Use a hardcoded base URL from config\n"
-                    f"  BASE_URL = os.environ['APP_BASE_URL']  # 'https://{parsed.netloc}'\n"
-                    f"  reset_link = f'{{BASE_URL}}/reset?token={{token}}'\n"
-                    f"  send_email(user.email, reset_link)"
+                    "File: Password reset handler for POST {action}.\n\n"
+                    "VULNERABLE pattern:\n"
+                    "  host = request.headers.get('{header_name}', request.host)\n"
+                    "  reset_link = f'https://{{host}}/reset?token={{token}}'\n"
+                    "  send_email(user.email, reset_link)\n\n"
+                    "SECURE pattern:\n"
+                    "  # Use a hardcoded base URL from config\n"
+                    "  BASE_URL = os.environ['APP_BASE_URL']  # 'https://{parsed.netloc}'\n"
+                    "  reset_link = f'{{BASE_URL}}/reset?token={{token}}'\n"
+                    "  send_email(user.email, reset_link)"
                 ),
-                affected_component=f"Password reset functionality at {action}",
+                affected_component="Password reset functionality at {action}",
                 references="https://portswigger.net/web-security/host-header/exploiting/password-reset-poisoning | https://www.skeletonscribe.net/2013/05/practical-http-host-header-attacks.html",
-                detection_method=f"Submitted a password reset request with '{header_name}: {actual_value}' and detected the injected host reflected in the {reflection['location']}, indicating the reset link uses the attacker-controlled host.",
+                detection_method="Submitted a password reset request with '{header_name}: {actual_value}' and detected the injected host reflected in the {reflection['location']}, indicating the reset link uses the attacker-controlled host.",
             ))
             return
 
@@ -503,7 +504,7 @@ def _test_password_reset_poisoning(session, form):
 def _test_routing_ssrf(session, url):
     """Test for routing-based SSRF via Host header."""
     parsed = urlparse(url)
-    original_host = parsed.netloc
+    parsed.netloc
 
     # Test with an internal hostname to see if the server routes differently
     internal_targets = [
@@ -511,7 +512,7 @@ def _test_routing_ssrf(session, url):
         ("127.0.0.1", "loopback routing"),
         ("0.0.0.0", "wildcard binding"),
         ("169.254.169.254", "cloud metadata endpoint"),
-        (f"internal.{parsed.hostname}", "internal subdomain"),
+        ("internal.{parsed.hostname}", "internal subdomain"),
     ]
 
     for internal_host, technique in internal_targets:
@@ -548,26 +549,26 @@ def _test_routing_ssrf(session, url):
         ]
 
         if any(ssrf_indicators):
-            indicator = next(m for m in ssrf_indicators if m)
+            next(m for m in ssrf_indicators if m)
             curl_cmd = build_curl("GET", url, headers={"Host": internal_host})
             session.add_finding(Finding(
-                title=f"Routing-Based SSRF via Host Header ({internal_host})",
+                title="Routing-Based SSRF via Host Header ({internal_host})",
                 severity=Severity.CRITICAL,
                 description=(
-                    f"The application routes requests based on the Host header. When the "
-                    f"Host header was set to '{internal_host}' ({technique}), the server "
-                    f"returned content from an internal service. This allows an attacker "
-                    f"to access internal resources, cloud metadata, or admin panels by "
-                    f"manipulating the Host header."
+                    "The application routes requests based on the Host header. When the "
+                    "Host header was set to '{internal_host}' ({technique}), the server "
+                    "returned content from an internal service. This allows an attacker "
+                    "to access internal resources, cloud metadata, or admin panels by "
+                    "manipulating the Host header."
                 ),
                 evidence=(
-                    f"URL: {url}\n"
-                    f"Original Host: {original_host}\n"
-                    f"Injected Host: {internal_host}\n"
-                    f"Technique: {technique}\n"
-                    f"Response Status: {resp.status_code}\n"
-                    f"SSRF Indicator: {indicator.group(0)}\n"
-                    f"Response Snippet: {body[:500]}"
+                    "URL: {url}\n"
+                    "Original Host: {original_host}\n"
+                    "Injected Host: {internal_host}\n"
+                    "Technique: {technique}\n"
+                    "Response Status: {resp.status_code}\n"
+                    "SSRF Indicator: {indicator.group(0)}\n"
+                    "Response Snippet: {body[:500]}"
                 ),
                 remediation=(
                     "1. Never use the Host header for internal routing decisions.\n"
@@ -580,39 +581,39 @@ def _test_routing_ssrf(session, url):
                 module="host_header",
                 cwe="CWE-644",
                 confirmed=True,
-                location=f"Host-based routing at {parsed.path}",
+                location="Host-based routing at {parsed.path}",
                 parameter="Host",
-                payload=f"Host: {internal_host}",
+                payload="Host: {internal_host}",
                 request_method="GET",
-                request_headers=f"Host: {internal_host}",
+                request_headers="Host: {internal_host}",
                 response_status=resp.status_code,
                 curl_command=curl_cmd,
                 reproduction_steps=(
-                    f"1. Send a GET request to {url} with Host: {internal_host}\n"
-                    f"2. Run: {curl_cmd}\n"
-                    f"3. Observe that the response contains internal service content.\n"
-                    f"4. The indicator '{indicator.group(0)}' confirms internal routing."
+                    "1. Send a GET request to {url} with Host: {internal_host}\n"
+                    "2. Run: {curl_cmd}\n"
+                    "3. Observe that the response contains internal service content.\n"
+                    "4. The indicator '{indicator.group(0)}' confirms internal routing."
                 ),
                 developer_fix=(
-                    f"File: Reverse proxy / load balancer configuration.\n\n"
-                    f"Nginx - strict host validation:\n"
-                    f"  server {{\n"
-                    f"    listen 80 default_server;\n"
-                    f"    return 444;  # Reject unknown hosts\n"
-                    f"  }}\n"
-                    f"  server {{\n"
-                    f"    listen 80;\n"
-                    f"    server_name {original_host};  # Only accept valid host\n"
-                    f"    ...\n"
-                    f"  }}\n\n"
-                    f"  Application level:\n"
-                    f"  ALLOWED_HOSTS = ['{original_host}']\n"
-                    f"  if request.host not in ALLOWED_HOSTS:\n"
-                    f"      abort(400)"
+                    "File: Reverse proxy / load balancer configuration.\n\n"
+                    "Nginx - strict host validation:\n"
+                    "  server {{\n"
+                    "    listen 80 default_server;\n"
+                    "    return 444;  # Reject unknown hosts\n"
+                    "  }}\n"
+                    "  server {{\n"
+                    "    listen 80;\n"
+                    "    server_name {original_host};  # Only accept valid host\n"
+                    "    ...\n"
+                    "  }}\n\n"
+                    "  Application level:\n"
+                    "  ALLOWED_HOSTS = ['{original_host}']\n"
+                    "  if request.host not in ALLOWED_HOSTS:\n"
+                    "      abort(400)"
                 ),
-                affected_component=f"Host-based routing at {parsed.netloc}",
+                affected_component="Host-based routing at {parsed.netloc}",
                 references="https://portswigger.net/web-security/host-header/exploiting | https://portswigger.net/research/cracking-the-lens-targeting-https-hidden-attack-surface",
-                detection_method=f"Set Host header to '{internal_host}' ({technique}) and detected internal service content in the response, confirming host-based routing SSRF.",
+                detection_method="Set Host header to '{internal_host}' ({technique}) and detected internal service content in the response, confirming host-based routing SSRF.",
             ))
             return
 
@@ -627,7 +628,7 @@ def run(session: ScanSession) -> None:
         host = parsed.netloc
 
         # Test direct host header and forwarded headers once per unique host+path
-        host_path = f"{host}{parsed.path}"
+        host_path = "{host}{parsed.path}"
         if host_path not in tested_hosts:
             tested_hosts.add(host_path)
             _test_host_header_direct(session, url)

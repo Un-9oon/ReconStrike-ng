@@ -1,5 +1,10 @@
 """DAST interception proxy -- HTTP/HTTPS MITM with passive traffic analysis."""
 
+from scanner.proxy.passive_analyzer import analyze_transaction, PassiveFinding
+from scanner.proxy.history import HistoryDB, HttpTransaction
+from scanner.proxy.ca_manager import CA_DIR
+from scanner.log import logger
+import requests
 import atexit
 import os
 import socket
@@ -12,6 +17,7 @@ from urllib.parse import urlparse
 
 _pending_cert_files: list[str] = []
 
+
 def _cleanup_cert_files():
     for f in _pending_cert_files:
         try:
@@ -23,12 +29,6 @@ def _cleanup_cert_files():
 
 atexit.register(_cleanup_cert_files)
 
-import requests
-
-from scanner.log import logger
-from scanner.proxy.ca_manager import CA_DIR
-from scanner.proxy.history import HistoryDB, HttpTransaction
-from scanner.proxy.passive_analyzer import analyze_transaction, PassiveFinding
 
 _HAS_CRYPTO = False
 try:
@@ -38,7 +38,7 @@ except ImportError:
     pass
 
 HOP_BY_HOP = {"proxy-connection", "connection", "keep-alive", "transfer-encoding",
-               "te", "trailer", "proxy-authorization", "proxy-authenticate", "upgrade"}
+              "te", "trailer", "proxy-authorization", "proxy-authenticate", "upgrade"}
 
 
 class _ProxyHandler(BaseHTTPRequestHandler):

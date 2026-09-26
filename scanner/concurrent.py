@@ -23,7 +23,7 @@ class ConcurrentCrawler:
         self._total_urls = 0
 
     def crawl(self):
-        from scanner.crawler import extract_links, extract_forms, extract_js_urls
+        pass
 
         logger.info("Starting concurrent crawler (%d threads)...", self.config.threads)
         start = time.time()
@@ -74,7 +74,7 @@ class ConcurrentCrawler:
                                     queue.append(link)
 
         logger.info("Crawling complete: %d URLs, %d forms (%.1fs)",
-                     len(self.session.crawled_urls), len(self.session.forms), time.time() - start)
+                    len(self.session.crawled_urls), len(self.session.forms), time.time() - start)
 
     def _fetch(self, url):
         from scanner.crawler import extract_links, extract_forms, extract_js_urls

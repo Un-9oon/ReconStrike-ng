@@ -101,7 +101,8 @@ def run(session: ScanSession) -> None:
                 title="JWT Algorithm Set to 'none'",
                 severity=Severity.CRITICAL,
                 description="A JWT token uses algorithm 'none', meaning the signature is not verified. Any user can forge tokens with arbitrary claims.",
-                evidence="Location: {}\nHeader: {}\nPayload: {}".format(location, json.dumps(header), json.dumps(payload)),
+                evidence="Location: {}\nHeader: {}\nPayload: {}".format(
+                    location, json.dumps(header), json.dumps(payload)),
                 remediation="Always enforce a strong algorithm (RS256, ES256). Reject 'none' algorithm.",
                 url=token_url,
                 module="jwt",
@@ -268,7 +269,8 @@ def run(session: ScanSession) -> None:
                 title="JWT Missing Expiration Claim",
                 severity=Severity.MEDIUM,
                 description="JWT token has no 'exp' claim, meaning it never expires. A stolen token grants permanent access.",
-                evidence="No 'exp' field in payload.\nLocation: {}\nPayload keys: {}".format(location, list(payload.keys())),
+                evidence="No 'exp' field in payload.\nLocation: {}\nPayload keys: {}".format(
+                    location, list(payload.keys())),
                 remediation="Always include an 'exp' claim in JWT tokens.",
                 url=token_url,
                 module="jwt",

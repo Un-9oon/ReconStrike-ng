@@ -10,7 +10,6 @@ CA_DIR = Path.home() / ".reconstrike-ng" / "ca"
 
 def _ensure_cryptography():
     try:
-        from cryptography import x509
         return True
     except ImportError:
         logger.error("DAST Proxy requires 'cryptography'. Install with: pip install cryptography")

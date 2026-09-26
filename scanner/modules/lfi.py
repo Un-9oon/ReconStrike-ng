@@ -87,7 +87,8 @@ def _test_param(session, url, param, original):
 
         technique = _get_traversal_technique(payload)
         idx = resp.text.find(matched_text)
-        snippet = resp.text[max(0, idx - 60):min(len(resp.text), idx + len(matched_text) + 60)].replace('\n', ' ').strip()
+        snippet = resp.text[max(0, idx - 60):min(len(resp.text), idx +
+                                                 len(matched_text) + 60)].replace('\n', ' ').strip()
 
         session.add_finding(Finding(
             title="Local File Inclusion / Path Traversal",
@@ -176,7 +177,7 @@ def _test_param(session, url, param, original):
 def _looks_like_passwd(text, indicator):
     if "root:" not in indicator:
         return True
-    lines = [l for l in text.split("\n") if re.match(r"^[a-z_][\w-]*:[^:]*:\d+:\d+:", l)]
+    lines = [ln for ln in text.split("\n") if re.match(r"^[a-z_][\w-]*:[^:]*:\d+:\d+:", ln)]
     return len(lines) >= 3
 
 

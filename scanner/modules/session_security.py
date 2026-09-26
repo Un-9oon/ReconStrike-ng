@@ -45,7 +45,7 @@ def _check_cookie_attributes(session: ScanSession, url: str) -> None:
 
     for cookie in session_cookies:
         issues = []
-        parsed = urlparse(url)
+        urlparse(url)
 
         if not cookie.secure:
             issues.append("Missing 'Secure' flag - cookie sent over unencrypted HTTP")
@@ -78,7 +78,8 @@ def _check_cookie_attributes(session: ScanSession, url: str) -> None:
         if not issues:
             continue
 
-        severity = Severity.HIGH if any(flag in i for i in issues for flag in ("HttpOnly", "Secure")) else Severity.MEDIUM
+        severity = Severity.HIGH if any(flag in i for i in issues for flag in (
+            "HttpOnly", "Secure")) else Severity.MEDIUM
         curl_cmd = "curl -k -v -I '{}' 2>&1 | grep -i set-cookie".format(url)
 
         evidence_lines = [

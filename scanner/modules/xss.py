@@ -148,7 +148,8 @@ def _check_forms(session: ScanSession, form: dict):
         }
 
         method = form["method"]
-        resp = session.post(form["action"], data=post_data) if method == "post" else session.get(form["action"], params=post_data)
+        resp = session.post(form["action"], data=post_data) if method == "post" else session.get(
+            form["action"], params=post_data)
         if not resp or tag not in resp.text or _is_in_safe_context(resp.text, tag):
             continue
 
@@ -158,7 +159,8 @@ def _check_forms(session: ScanSession, form: dict):
             expected = check.format(tag=tag2)
             post_data[name] = payload
 
-            resp2 = session.post(form["action"], data=post_data) if method == "post" else session.get(form["action"], params=post_data)
+            resp2 = session.post(form["action"], data=post_data) if method == "post" else session.get(
+                form["action"], params=post_data)
             if not resp2 or expected not in resp2.text or _is_in_safe_context(resp2.text, expected):
                 continue
 
@@ -197,7 +199,8 @@ def _check_forms(session: ScanSession, form: dict):
                 request_method=method_upper,
                 request_body=data_str,
                 response_status=resp2.status_code,
-                curl_command=build_curl(method_upper, form["action"], data=data_str) if method_upper == "POST" else build_curl("GET", "{}?{}".format(form["action"], data_str)),
+                curl_command=build_curl(method_upper, form["action"], data=data_str) if method_upper == "POST" else build_curl(
+                    "GET", "{}?{}".format(form["action"], data_str)),
                 reproduction_steps=(
                     "1. Navigate to: {}\n"
                     "2. Find the form submitting to: {}\n"

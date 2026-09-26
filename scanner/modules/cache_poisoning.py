@@ -1,10 +1,9 @@
-import re
 import hashlib
 import time
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import urlparse, parse_qs
 
 from scanner.log import logger
-from scanner.core import Finding, Severity, ScanSession, build_curl
+from scanner.core import Finding, Severity, ScanSession
 
 
 UNKEYED_HEADER_PAYLOADS = [

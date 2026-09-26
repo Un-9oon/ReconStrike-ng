@@ -137,7 +137,8 @@ def _check_discovery_endpoints(session, base_url):
                 ),
                 affected_component="OAuth/OIDC server configuration",
                 references="https://openid.net/specs/openid-connect-discovery-1_0.html | https://portswigger.net/web-security/oauth",
-                detection_method="Discovered OAuth/OIDC configuration endpoint at {} and analyzed the supported authentication methods and grant types.".format(discovery_url),
+                detection_method="Discovered OAuth/OIDC configuration endpoint at {} and analyzed the supported authentication methods and grant types.".format(
+                    discovery_url),
             ))
 
             try:
@@ -153,7 +154,7 @@ def _check_discovery_endpoints(session, base_url):
         if "/authorize" in path or "/token" in path:
             if resp.status_code in (200, 302):
                 if any(kw in body for kw in ("client_id", "redirect_uri", "response_type",
-                                              "grant_type", "scope", "oauth", "authorize")):
+                                             "grant_type", "scope", "oauth", "authorize")):
                     curl_cmd = _build_curl("GET", discovery_url)
                     session.add_finding(Finding(
                         title="OAuth Endpoint Discovered: {}".format(path),
@@ -161,7 +162,8 @@ def _check_discovery_endpoints(session, base_url):
                         description=(
                             "An OAuth endpoint was found at '{}'. This endpoint "
                             "may handle authorization or token requests. Further testing for "
-                            "redirect_uri manipulation and state parameter validation is recommended.".format(discovery_url)
+                            "redirect_uri manipulation and state parameter validation is recommended.".format(
+                                discovery_url)
                         ),
                         evidence=(
                             "Endpoint: {}\n"
@@ -196,7 +198,8 @@ def _check_discovery_endpoints(session, base_url):
                         ),
                         affected_component="OAuth endpoint at {}".format(path),
                         references="https://portswigger.net/web-security/oauth | https://datatracker.ietf.org/doc/html/rfc6749",
-                        detection_method="Discovered OAuth endpoint at {} by probing common OAuth paths and detecting OAuth-related keywords in the response.".format(discovery_url),
+                        detection_method="Discovered OAuth endpoint at {} by probing common OAuth paths and detecting OAuth-related keywords in the response.".format(
+                            discovery_url),
                     ))
 
 
@@ -286,7 +289,8 @@ def _test_redirect_uri(session, auth_endpoint, base_url):
                     ),
                     affected_component="OAuth authorization endpoint redirect_uri validation",
                     references="https://portswigger.net/web-security/oauth#leaking-authorization-codes-and-access-tokens | https://datatracker.ietf.org/doc/html/rfc6819#section-4.2.4",
-                    detection_method="Submitted manipulated redirect_uri ({}) to OAuth authorization endpoint and detected the server redirecting to the attacker-controlled URL.".format(description),
+                    detection_method="Submitted manipulated redirect_uri ({}) to OAuth authorization endpoint and detected the server redirecting to the attacker-controlled URL.".format(
+                        description),
                 ))
                 return
 
@@ -424,7 +428,8 @@ def _check_token_in_url(session, url):
             ),
             affected_component="OAuth token delivery mechanism",
             references="https://datatracker.ietf.org/doc/html/rfc6749#section-10.3 | https://portswigger.net/web-security/oauth#leaking-authorization-codes-and-access-tokens",
-            detection_method="Detected OAuth token pattern ({}) in crawled URL, indicating tokens are transmitted insecurely via URL parameters.".format(description),
+            detection_method="Detected OAuth token pattern ({}) in crawled URL, indicating tokens are transmitted insecurely via URL parameters.".format(
+                description),
         ))
         return
 

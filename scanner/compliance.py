@@ -1,4 +1,4 @@
-from scanner.core import ScanSession, Severity, Finding
+from scanner.core import ScanSession
 from scanner.log import logger
 
 OWASP_TOP_10 = {

@@ -1,5 +1,5 @@
 import re
-from scanner.core import Finding, Severity, ScanSession
+from scanner.core import Severity, ScanSession
 
 CRYPTO_PATTERNS = [
     ("MD5 hash usage", r"\bmd5\(", Severity.MEDIUM, "CWE-328"),

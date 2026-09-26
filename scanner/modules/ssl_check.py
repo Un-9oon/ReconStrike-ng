@@ -71,9 +71,9 @@ def run(session: ScanSession) -> None:
                         location=f"TLS configuration on {hostname}:{port}",
                         curl_command=test_cmd,
                         developer_fix=(
-                            f"Nginx: ssl_protocols TLSv1.2 TLSv1.3;\n"
-                            f"Apache: SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1\n"
-                            f"HAProxy: ssl-min-ver TLSv1.2"
+                            "Nginx: ssl_protocols TLSv1.2 TLSv1.3;\n"
+                            "Apache: SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1\n"
+                            "HAProxy: ssl-min-ver TLSv1.2"
                         ),
                         affected_component="TLS protocol configuration",
                         references="https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html",
@@ -192,7 +192,7 @@ def _check_deprecated_protocols(session: ScanSession, hostname: str, port: int):
             ctx.minimum_version = proto_const
             ctx.maximum_version = proto_const
             with socket.create_connection((hostname, port), timeout=5) as sock:
-                with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
+                with ctx.wrap_socket(sock, server_hostname=hostname):
                     session.add_finding(Finding(
                         title=f"Server Accepts Deprecated {proto_name}",
                         severity=Severity.MEDIUM,
@@ -206,8 +206,8 @@ def _check_deprecated_protocols(session: ScanSession, hostname: str, port: int):
                         location=f"TLS protocol support on {hostname}:{port}",
                         curl_command=f"openssl s_client -connect {hostname}:{port} -{proto_name.lower().replace('.', '_')}",
                         developer_fix=(
-                            f"Nginx: ssl_protocols TLSv1.2 TLSv1.3;\n"
-                            f"Apache: SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1"
+                            "Nginx: ssl_protocols TLSv1.2 TLSv1.3;\n"
+                            "Apache: SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1"
                         ),
                         affected_component="TLS protocol configuration",
                         detection_method="Performed TLS handshake analysis checking: protocol version (TLS 1.2+ required), certificate validity and expiration, hostname verification, and cipher suite strength. Uses Python\'s ssl module for direct socket-level inspection.",

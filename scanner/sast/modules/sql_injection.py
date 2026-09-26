@@ -1,5 +1,5 @@
 import re
-from scanner.core import Finding, Severity, ScanSession
+from scanner.core import Severity, ScanSession
 
 SQL_PATTERNS = [
     ("String concatenation in SELECT", r"""(?i)(['"]SELECT\s.+?['"])\s*\+"""),

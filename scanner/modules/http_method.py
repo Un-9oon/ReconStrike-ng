@@ -276,7 +276,8 @@ def _test_method_tampering(session, url):
             ).format(path=parsed.path),
             affected_component="Access control on {}".format(parsed.path),
             references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods | https://cwe.mitre.org/data/definitions/650.html",
-            detection_method="Sent HTTP {} request to an endpoint that returned {} for GET, and received a {} response indicating access control bypass.".format(method, baseline_status, resp.status_code),
+            detection_method="Sent HTTP {} request to an endpoint that returned {} for GET, and received a {} response indicating access control bypass.".format(
+                method, baseline_status, resp.status_code),
         ))
         return
 
@@ -392,7 +393,8 @@ def _test_method_override_headers(session, url):
                 ).format(hdr=header_name),
                 affected_component="Method override middleware for {}".format(parsed.path),
                 references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods | https://portswigger.net/web-security/authentication/password-based",
-                detection_method="Sent a GET request with '{}: {}' header and observed the server processed it differently from a normal GET, indicating method override is active.".format(header_name, override_method),
+                detection_method="Sent a GET request with '{}: {}' header and observed the server processed it differently from a normal GET, indicating method override is active.".format(
+                    header_name, override_method),
             ))
             return
 

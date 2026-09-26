@@ -1,5 +1,4 @@
-import re
-from scanner.core import Finding, Severity, ScanSession
+from scanner.core import Severity, ScanSession
 
 SENSITIVE_PATTERNS = [
     ("Logging password data", r"(?i)\b(?:log|logger|logging)\b.*password", Severity.MEDIUM, "CWE-532"),

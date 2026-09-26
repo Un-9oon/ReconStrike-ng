@@ -1,8 +1,6 @@
 import re
-import json
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-from colorama import Fore, Style
 
 from scanner.log import logger
 from scanner.core import Finding, Severity, ScanSession
@@ -336,7 +334,7 @@ def _test_method_confusion(session: ScanSession, baseline: dict) -> None:
                 timeout=session.config.timeout,
                 verify=session.config.verify_ssl,
             )
-            elapsed = time.time() - start
+            time.time() - start
         except (OSError, ValueError) as e:
             logger.debug("zero_day _test_method_confusion: request failed: %s", e)
             continue
@@ -493,17 +491,17 @@ def _report_anomaly(
 
 
 def run(session: ScanSession) -> None:
-    logger.info(f"\n[⚡] Running Zero-Day Heuristics (Intelligent Fuzzing)...")
+    logger.info("\n[⚡] Running Zero-Day Heuristics (Intelligent Fuzzing)...")
 
     # Respect --zero-day-sensitivity if the CLI set it on the session config
     min_signals = getattr(session.config, "_zero_day_min_signals", _DEFAULT_MIN_SIGNALS)
 
     target = session.config.target
 
-    logger.info(f" ▸ Establishing baseline response...")
+    logger.info(" ▸ Establishing baseline response...")
     baseline = _get_baseline(session, target)
     if baseline["status"] is None:
-        logger.warning(f" ✗ Could not establish baseline, skipping zero-day heuristics.")
+        logger.warning(" ✗ Could not establish baseline, skipping zero-day heuristics.")
         return
     logger.info(
         "✓ Baseline established: status=%s, size=%d bytes, time=%.2fs "
@@ -511,7 +509,7 @@ def run(session: ScanSession) -> None:
         baseline['status'], baseline['size'], baseline['time'], min_signals
     )
 
-    logger.info(f" ▸ Phase 1: Fuzzing URL parameters...")
+    logger.info(" ▸ Phase 1: Fuzzing URL parameters...")
     fuzzed_urls = set()
     for url in list(session.crawled_urls):
         parsed = urlparse(url)
@@ -522,7 +520,7 @@ def run(session: ScanSession) -> None:
                 break
 
     if not fuzzed_urls:
-        logger.info(f" ℹ No parameterized URLs found, testing common parameters...")
+        logger.info(" ℹ No parameterized URLs found, testing common parameters...")
         common_params = ["id", "page", "q", "search", "name", "user", "file", "path", "url", "callback"]
         for param in common_params:
             test_url = f"{target}?{param}=1"
@@ -531,14 +529,14 @@ def run(session: ScanSession) -> None:
                 _fuzz_url_params(session, test_url, test_baseline, min_signals=min_signals)
                 break
 
-    logger.info(f" ▸ Phase 2: Fuzzing form fields...")
+    logger.info(" ▸ Phase 2: Fuzzing form fields...")
     _fuzz_form_fields(session, baseline, min_signals=min_signals)
 
-    logger.info(f" ▸ Phase 3: Testing HTTP method confusion...")
+    logger.info(" ▸ Phase 3: Testing HTTP method confusion...")
     _test_method_confusion(session, baseline)
 
     found_count = sum(1 for f in session.findings if f.module == "zero_day")
     if found_count > 0:
         logger.info(f" ★ Zero-day heuristic scan complete: {found_count} anomalies detected.")
     else:
-        logger.info(f" ✓ Zero-day heuristic scan complete: No anomalies detected.")
+        logger.info(" ✓ Zero-day heuristic scan complete: No anomalies detected.")

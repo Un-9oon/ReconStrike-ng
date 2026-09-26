@@ -324,7 +324,8 @@ def _test_forms(session, form):
 
     baseline_data = {inp["name"]: inp.get("value", "test") for inp in inputs if inp.get("name")}
 
-    baseline_resp = session.post(action, data=baseline_data) if method == "post" else session.get(action, params=baseline_data)
+    baseline_resp = session.post(action, data=baseline_data) if method == "post" else session.get(
+        action, params=baseline_data)
 
     baseline_text = baseline_resp.text if baseline_resp else ""
 

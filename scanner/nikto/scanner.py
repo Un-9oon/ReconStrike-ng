@@ -43,7 +43,7 @@ class FPFingerprint:
 
         self.calibrated = True
         logger.info("Nikto: FP calibration done -- %d codes, %d hashes, %d titles",
-                     len(self.fp_status_codes), len(self.fp_body_hashes), len(self.fp_titles))
+                    len(self.fp_status_codes), len(self.fp_body_hashes), len(self.fp_titles))
 
     def is_false_positive(self, resp, signature: dict) -> bool:
         if not self.calibrated:
@@ -156,7 +156,8 @@ def run(session: ScanSession) -> None:
             ).format(hit['path']),
             url=hit["url"], module="nikto", cwe=hit["cwe"], confirmed=True,
             location=hit["path"],
-            detection_method="Nikto-style path enumeration with content validation and FP reduction (category: {})".format(hit['category']),
+            detection_method="Nikto-style path enumeration with content validation and FP reduction (category: {})".format(
+                hit['category']),
             developer_fix=(
                 "Add the following to your web server configuration to block access:\n"
                 "  # Nginx:\n"

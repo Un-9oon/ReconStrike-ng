@@ -1,5 +1,4 @@
 import json
-import re
 import time
 from urllib.parse import urljoin
 

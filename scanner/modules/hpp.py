@@ -1,4 +1,3 @@
-import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from scanner.core import Finding, Severity, ScanSession
@@ -184,7 +183,8 @@ def _test_url_params(session, url):
             ).format(path=parsed.path, p=param),
             affected_component="Parameter handling in route for {}".format(parsed.path),
             references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/04-Testing_for_HTTP_Parameter_Pollution | https://book.hacktricks.xyz/pentesting-web/parameter-pollution",
-            detection_method="Sent duplicate URL parameters ('{}' appearing twice with different values) and analyzed which value the server used. Server {}.".format(param, handling_desc),
+            detection_method="Sent duplicate URL parameters ('{}' appearing twice with different values) and analyzed which value the server used. Server {}.".format(
+                param, handling_desc),
         ))
 
 
@@ -286,7 +286,8 @@ def _test_form_params(session, form):
             ).format(action, n=name),
             affected_component="POST parameter handling in form handler for {}".format(action),
             references="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/04-Testing_for_HTTP_Parameter_Pollution",
-            detection_method="Submitted duplicate POST form parameters ('{}' appearing twice) and detected the server {} based on response content comparison.".format(name, handling_desc),
+            detection_method="Submitted duplicate POST form parameters ('{}' appearing twice) and detected the server {} based on response content comparison.".format(
+                name, handling_desc),
         ))
 
 
