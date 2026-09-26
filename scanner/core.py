@@ -320,7 +320,14 @@ def _sanitize_path(path: str) -> str:
         logger.warning("Output redirected to: %s", fallback)
         return fallback
 
-    if not os.access(os.path.dirname(abs_path) or ".", os.W_OK):
+    # Check write permission by attempting to create a test file.
+    # os.access() is unreliable as root (always returns True).
+    test_file = os.path.join(os.path.dirname(abs_path) or ".", ".reconstrike_write_test")
+    try:
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+    except OSError:
         logger.warning(
             "No write permission for output path: %s. "
             "Falling back to current working directory.",

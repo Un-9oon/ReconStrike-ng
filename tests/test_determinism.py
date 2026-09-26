@@ -13,6 +13,7 @@ import sys
 import time
 import unittest
 import pytest
+from unittest.mock import patch
 
 from scanner.core import ScanConfig, ScanSession
 from scanner.concurrent import ConcurrentCrawler
@@ -83,6 +84,11 @@ class TestModuleDeterminism(VulnAppFixture):
         module_func(session)
         return len(session.findings)
 
+    def _run_module_deterministic(self, module_func, extra_urls):
+        """Run a module with deterministic nonce generation for cache poisoning."""
+        with patch('scanner.modules.cache_poisoning._generate_nonce', return_value='fixednonce'):
+            return self._run_module(module_func, extra_urls)
+
     def test_idor_deterministic(self):
         """IDOR module should return consistent finding counts."""
         extra_urls = [
@@ -123,7 +129,7 @@ class TestModuleDeterminism(VulnAppFixture):
         extra_urls = [f"{VULNAPP_URL}/cached"]
         counts = []
         for _ in range(3):
-            count = self._run_module(cache_poisoning.run, extra_urls)
+            count = self._run_module_deterministic(cache_poisoning.run, extra_urls)
             counts.append(count)
         assert len(set(counts)) == 1, f"Cache poisoning finding counts varied: {counts}"
         assert counts[0] >= 1, f"Cache poisoning should find at least 1 vulnerability, got {counts}"

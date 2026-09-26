@@ -29,6 +29,52 @@ jobs:
           python -m pytest --cov=scanner --cov-report=xml --cov-fail-under=70 \
             -v --tb=long 2>&1 || { echo "::error::Tests failed"; exit 1; }
 
+  deps-audit:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pip-audit and safety
+        run: pip install pip-audit safety
+      - name: Run pip-audit on requirements-lock.txt
+        run: |
+          pip-audit -r requirements-lock.txt --desc --format json --output /tmp/pip-audit.json || true
+          cat /tmp/pip-audit.json
+      - name: Run safety check
+        run: |
+          safety check -r requirements-lock.txt --json --output /tmp/safety.json || true
+          cat /tmp/safety.json
+      - name: Fail on high/critical vulnerabilities
+        run: |
+          python -c "
+import json
+import sys
+
+# Check pip-audit results
+with open('/tmp/pip-audit.json') as f:
+    audit = json.load(f)
+high_critical = [v for v in audit.get('vulnerabilities', []) if v.get('severity', '').upper() in ('HIGH', 'CRITICAL')]
+if high_critical:
+    print('HIGH/CRITICAL vulnerabilities found in pip-audit:')
+    for v in high_critical:
+        print(f\"  {v['package']} {v['installed_version']}: {v['vulnerability_id']} ({v['severity']})\")
+    sys.exit(1)
+
+# Check safety results
+with open('/tmp/safety.json') as f:
+    safety = json.load(f)
+if safety:
+    print('Vulnerabilities found in safety:')
+    for v in safety:
+        print(f\"  {v.get('package', 'unknown')}: {v.get('vulnerability_id', 'unknown')}\")
+    sys.exit(1)
+
+print('No high/critical vulnerabilities found')
+"
+
   lint:
     runs-on: ubuntu-latest
     steps:

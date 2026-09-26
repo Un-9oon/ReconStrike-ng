@@ -211,6 +211,48 @@ reconstrike-ng --network-scan 10.0.0.1 --ports 1-65535 --scan-speed 5
 reconstrike-ng -t https://target.com --network-scan 192.168.1.0/24
 ```
 
+### Adaptive Network Masking (ANM) — Evasion & Rotation
+
+**ANM provides runtime identity rotation** (User-Agent, TLS fingerprint, IP via Tor/proxy, MAC address) to evade blocking during scans. Enable with `--anm`.
+
+```bash
+# Basic ANM (UA rotation only — no auth required)
+reconstrike-ng -t https://target.com --anm --rotate-ua
+
+# Full ANM with Tor IP rotation (requires --authorized-target)
+reconstrike-ng -t https://target.com --anm --tor --authorized-target https://target.com
+
+# Proxy pool rotation (requires --authorized-target)
+reconstrike-ng -t https://target.com --anm --proxy-pool proxies.txt --authorized-target https://target.com
+
+# MAC address rotation (Linux only, root required, requires --authorized-target)
+reconstrike-ng -t https://target.com --anm --rotate-mac --authorized-target https://target.com
+```
+
+#### ANM Authorization Gate (Critical)
+
+High-impact identity rotation modifies your network-layer identity and may constitute **unauthorized access** against targets you don't own:
+
+| Feature | Requires `--authorized-target` | Notes |
+|---------|-------------------------------|-------|
+| User-Agent rotation | No | Cosmetic only (HTTP header) |
+| TLS fingerprint impersonation | No | Browser-like TLS ClientHello |
+| Tor circuit rotation (`--tor`) | **Yes** | Changes exit IP |
+| Proxy pool IP rotation | **Yes** | Changes exit IP |
+| MAC address rotation (`--rotate-mac`) | **Yes** | Linux only, requires root |
+| DHCP lease renewal | **Yes** | Linux only, requires root |
+
+**Without `--authorized-target <URL>`**, high-impact features are **silently disabled** with a warning. UA rotation remains active.
+
+#### ANM Limitations
+
+- **Tor**: Requires running Tor service (port 9050/9051). Not included in Docker sandbox.
+- **MAC rotation**: Linux only, requires root privileges, works only in VM (not Docker).
+- **DHCP renewal**: Linux only, requires root, may disrupt local network.
+- **Auto-scraped proxies**: Untrusted public proxies — can intercept traffic. Use `--proxy-pool` with vetted proxies.
+- **WAF evasion headers**: Randomizes headers but doesn't guarantee bypass.
+- **Rate of rotation**: Limited by `--anm-cooldown` (default 3s) and `--anm-max-rotations` (default 50).
+
 ### Nikto-Style Misconfiguration Scan
 
 ```bash
@@ -233,7 +275,9 @@ reconstrike-ng -t https://target.com --sast-dir /path/to/source
 
 SAST modules: hardcoded secrets, insecure functions, SQL injection patterns, insecure cryptography, path traversal risks, sensitive data exposure.
 
-### DAST Interception Proxy
+### DAST Interception Proxy (Experimental)
+
+⚠️ **Experimental feature** — The DAST proxy is under active development and may have stability issues. Not recommended for production scans.
 
 ```bash
 # Start passive analysis proxy
@@ -242,6 +286,12 @@ reconstrike-ng -t https://target.com --dast-proxy --proxy-port 8087
 # Configure your browser to use http://127.0.0.1:8087 as proxy
 # Import CA cert from ~/.reconstrike-ng/ca/ca.crt into browser
 ```
+
+Known limitations:
+- TLS interception requires manual CA certificate import in browser
+- Limited support for HTTP/2 and WebSocket traffic
+- May not handle complex SPA (Single Page Application) routing correctly
+- Proxy stability under high load needs improvement
 
 ### Custom Headers & Cookies
 ```bash
