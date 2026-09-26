@@ -487,7 +487,7 @@ def main():
     if args.dast_proxy:
         try:
             from scanner.proxy.server import ProxyServer
-            dast_proxy = ProxyServer(port=args.proxy_port, bind_addr=args.proxy_bind)
+            dast_proxy = ProxyServer(port=args.proxy_port, bind_addr=args.proxy_bind, verify_ssl=config.verify_ssl)
             dast_proxy.start()
             if not args.quiet:
                 logger.info("DAST Proxy started on %s:%d", args.proxy_bind, args.proxy_port)

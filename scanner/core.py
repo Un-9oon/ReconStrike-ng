@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 from urllib.parse import urlparse
+from functools import lru_cache
 
 import curl_cffi.requests as requests
 requests.RequestException = requests.errors.RequestsError
@@ -214,15 +215,50 @@ PRIVATE_IP_RANGES = [
 ]
 
 
-def _resolve_ip(hostname: str) -> str | None:
+# DNS resolution cache with TTL (1 hour)
+_DNS_CACHE: dict[str, tuple[str | None, float]] = {}
+_DNS_CACHE_TTL = 3600.0
+_DNS_CACHE_LOCK = threading.Lock()
+
+# DNS resolution timeout in seconds
+_DNS_RESOLUTION_TIMEOUT = 3.0
+
+
+def _resolve_ip_cached(hostname: str) -> str | None:
+    """Resolve hostname to IP with caching and timeout."""
+    now = time.time()
+    with _DNS_CACHE_LOCK:
+        if hostname in _DNS_CACHE:
+            ip, cached_at = _DNS_CACHE[hostname]
+            if now - cached_at < _DNS_CACHE_TTL:
+                return ip
+
+    # Resolve with timeout using ThreadPoolExecutor
     try:
-        return socket.gethostbyname(hostname)
-    except (socket.gaierror, ValueError):
-        return None
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(socket.gethostbyname, hostname)
+            try:
+                ip = future.result(timeout=_DNS_RESOLUTION_TIMEOUT)
+            except FuturesTimeoutError:
+                logger.warning("DNS resolution timeout for %s (>%ss)", hostname, _DNS_RESOLUTION_TIMEOUT)
+                ip = None
+            except (socket.gaierror, ValueError):
+                ip = None
+    except Exception:
+        ip = None
+
+    with _DNS_CACHE_LOCK:
+        _DNS_CACHE[hostname] = (ip, now)
+    return ip
+
+
+def _resolve_ip(hostname: str) -> str | None:
+    """Legacy wrapper for backward compatibility."""
+    return _resolve_ip_cached(hostname)
 
 
 def _is_private_ip(hostname: str) -> bool:
-    resolved = _resolve_ip(hostname)
+    resolved = _resolve_ip_cached(hostname)
     if not resolved:
         return False
     try:
@@ -243,12 +279,57 @@ def _domain_matches(url: str, reference_url: str) -> bool:
     return urlparse(url).netloc.lower() == urlparse(reference_url).netloc.lower()
 
 
+DANGEROUS_PATHS = {
+    "/etc", "/boot", "/sys", "/proc", "/dev", "/root",
+    "/bin", "/sbin", "/lib", "/lib64", "/usr/bin", "/usr/sbin",
+    "/usr/lib", "/usr/lib64", "/var/lib", "/var/log",
+}
+
+
+def _is_dangerous_path(path: str) -> bool:
+    abs_path = os.path.abspath(path)
+    for dangerous in DANGEROUS_PATHS:
+        if abs_path == dangerous or abs_path.startswith(dangerous + os.sep):
+            return True
+    return False
+
+
 def _sanitize_path(path: str) -> str:
     abs_path = os.path.abspath(path)
     cwd = os.path.abspath(os.getcwd())
-    rel = os.path.relpath(abs_path, start=cwd)
-    if rel.startswith("..") or os.path.isabs(rel):
-        return os.path.join(cwd, os.path.basename(path) or "output")
+
+    if _is_dangerous_path(abs_path):
+        logger.warning(
+            "Refusing to write to dangerous system location: %s. "
+            "Falling back to current working directory.",
+            abs_path,
+        )
+        fallback = os.path.join(cwd, os.path.basename(path) or "output")
+        logger.warning("Output redirected to: %s", fallback)
+        return fallback
+
+    try:
+        os.makedirs(os.path.dirname(abs_path) or ".", exist_ok=True)
+    except OSError:
+        logger.warning(
+            "Cannot create directory for output path: %s. "
+            "Falling back to current working directory.",
+            abs_path,
+        )
+        fallback = os.path.join(cwd, os.path.basename(path) or "output")
+        logger.warning("Output redirected to: %s", fallback)
+        return fallback
+
+    if not os.access(os.path.dirname(abs_path) or ".", os.W_OK):
+        logger.warning(
+            "No write permission for output path: %s. "
+            "Falling back to current working directory.",
+            abs_path,
+        )
+        fallback = os.path.join(cwd, os.path.basename(path) or "output")
+        logger.warning("Output redirected to: %s", fallback)
+        return fallback
+
     return abs_path
 
 
@@ -492,7 +573,7 @@ class ScanSession:
                     self._track_response_status(None)
                     return None
                 chunks.append(chunk)
-            resp._content = b"".join(chunks)
+            resp.content = b"".join(chunks)
         except (requests.RequestException, OSError, ValueError) as e:
             self._track_response_status(None, exc=e)
             return None

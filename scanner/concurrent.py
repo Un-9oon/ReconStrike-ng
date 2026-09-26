@@ -28,8 +28,11 @@ class ConcurrentCrawler:
         logger.info("Starting concurrent crawler (%d threads)...", self.config.threads)
         start = time.time()
 
-        queue = [self.config.target]
+        extra_seeds = list(getattr(self.config, "extra_urls", []) or [])
+        queue = [self.config.target] + extra_seeds
         depth_map = {self.config.target: 0}
+        for url in extra_seeds:
+            depth_map[url] = 0
 
         while queue and self._total_urls < MAX_URLS:
             batch = queue[:self.config.threads * 2]

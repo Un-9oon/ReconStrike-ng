@@ -1,57 +1,74 @@
 # ReconStrike-ng — Known Issues & Limitations
 
-> Last updated: 2026-09-25  
-> These are honest, confirmed limitations — not aspirational roadmap items.
+> Last updated: 2026-09-26  
+> These are honest, confirmed limitations — not aspirational roadmap items.  
+> Every issue listed here was personally reproduced or fixed in this session.
 
 ---
 
-## Fixed (shipped in this patch)
+## Fixed (shipped in this session)
 
-| ID | Component | Description | Fixed in |
-|----|-----------|-------------|----------|
-| BUG-001 | `scanner/modules/idor.py` | `build_curl(url)` called with missing required `method` arg → `TypeError` crash on any profile that includes `idor` module | v1.0.1 |
-| BUG-002 | `scanner/modules/ssrf.py` | Same `build_curl(url)` crash at two call sites | v1.0.1 |
-| BUG-003 | `scanner/modules/zero_day.py` | Emitted N findings per payload per param per category → 10-20× false-positive noise | v1.0.1 |
-| BUG-004 | `scanner/crawler.py` | Only discovered HTML-linked URLs; completely missed unlinked endpoints like `/admin`, `/api/*`, `.env` | v1.0.1 |
+| ID | Component | Description | How Fixed |
+|----|-----------|-------------|-----------|
+| BUG-001 | `scanner/modules/idor.py` | `build_curl(url)` called with missing required `method` arg → `TypeError` crash | Fixed signature to `build_curl("GET", url)` |
+| BUG-002 | `scanner/modules/ssrf.py` | Same `build_curl(url)` crash at two call sites | Fixed both call sites |
+| BUG-003 | `scanner/modules/zero_day.py` | Emitted N findings per payload per param per category → 10-20× false-positive noise | Added `_seen_signals` dedup + min 2 independent signals before emit |
+| BUG-004 | `scanner/crawler.py` / `scanner/concurrent.py` | Only discovered HTML-linked URLs; completely missed unlinked endpoints | Added `extra_urls` support to `ConcurrentCrawler` queue |
+| BUG-005 | `scanner/core.py::_sanitize_path()` | Silently collapsed absolute paths (e.g. `--json-file /tmp/out.json`) to basename in CWD | Now preserves operator-intended paths; blocks only dangerous system locations (`/etc`, `/boot`, etc.) with explicit WARNING log |
+| BUG-006 | `scanner/core.py::_safe_read()` | Set `resp._content` instead of `resp.content` for curl_cffi.Response → `resp.text` empty | Changed to `resp.content = b"".join(chunks)` |
+| BUG-007 | `scanner/proxy/server.py` | Hardcoded `verify=False` on upstream requests, ignoring `--no-ssl-verify` | Added `verify_ssl` parameter to `ProxyServer`, passed from config |
+| BUG-008 | `scanner/core.py::_resolve_ip()` | Unbounded/uncached DNS resolution; slow/unresponsive resolver could stall scan | Added 3s timeout via ThreadPoolExecutor + 1-hour in-process TTL cache |
 
 ---
 
 ## Open (not yet fixed)
 
-### GAP-4: Module Verification Status Unknown
+### GAP-1: Module Verification Gaps
 **Severity: Medium**
 
-43 DAST modules exist, but only 2 have been systematically exercised against a deliberate target:
-- `xss` — verified against `/xss?q=` endpoint  
-- `sqli` — verified against `/sqli?id=` endpoint  
+17 of 43 DAST modules remain **UNVERIFIED** — no suitable test target available in this test suite to confirm true-positive detection. These modules run without crashing but their detection logic has not been validated against a real vulnerability:
 
-The remaining 41 modules have only been import-tested and signature-tested (unit tests), not end-to-end detection-tested. Some may have incorrect detection logic or dead code paths.
+| Module | Why Unverified |
+|--------|----------------|
+| `ssti` | Fixture reflects `{{7*7}}` but does NOT evaluate it (no true SSTI) |
+| `cmdi` | Fixture echoes `cmd=` param but doesn't execute (no real RCE) |
+| `xxe` | Fixture echoes DOCTYPE but doesn't parse entities (no file read) |
+| `lfi` | Fixture echoes `../../etc/passwd` with stub; no real file inclusion |
+| `second_order` | Fixture stores/echoes; no cross-request execution |
+| `deserialization` | Fixture echoes Java magic bytes; no real gadget chain |
+| `race_condition` | Fixture has non-atomic counter; module needs real concurrency measurement |
+| `request_smuggling` | Header reflection only; real TE.CL needs proxy chain |
+| `websocket_security` | 400+Upgrade header detection only; no WS handshake |
+| `ssl` | Fixture is HTTP-only; no HTTPS target available |
+| `auth` | Fixture has no login form for authenticated scanning tests |
+| `subdomain` | localhost/IP target, no DNS zone to enumerate |
+| `subdomain_takeover` | Requires live DNS CNAME targets |
+| `dom_xss` | DOM sinks require JS engine; DAST-only heuristic |
+| `portscan` (full) | Only top-1000 ports on localhost; minimal target |
+| `fingerprint` (full) | Only detects "Apache/2.4.41" from server-info stub |
+| `session_security` (auth) | Fixture sets no cookies; module logic untested with real cookies |
 
-**Workaround:** Use `--profile quick` to limit exposure to the most-tested modules.  
-**Tracking:** `docs/MODULE_STATUS.md` will be added once each module is verified.
+**Workaround:** Use `--profile quick` or `--profile owasp` to limit to best-tested modules.  
+**Tracking:** See `docs/MODULE_STATUS.md` for per-module CONFIRMED/CONFIRMED-NEGATIVE/UNVERIFIED verdicts.
 
-### GAP-5: CI Integration Tests Require Local vulnapp
+### GAP-2: CI Integration Tests Require Local vulnapp
 **Severity: Low**
 
-The new `integration` CI job starts `tests/fixtures/vulnapp.py` as a subprocess. If the fixture fails to start (port conflict, Python path issue), the job will fail with a misleading error.
+The `integration` CI job starts `tests/fixtures/vulnapp.py` as a subprocess. If the fixture fails to start (port conflict, Python path issue), the job fails with a misleading error.
 
 **Workaround:** If CI fails on the `integration` job for environmental reasons, re-run the specific job. The `test` (unit) job is independent.
 
-### GAP-6: ANM Identity Rotation — No Authorization Gate
+### GAP-3: ANM Identity Rotation — Authorization Gate Implemented
 **Severity: High (use-case concern, not code bug)**
 
-The `--rotate-mac` and `--anm` flags rotate MAC address and User-Agent without requiring explicit authorization confirmation. These are powerful capabilities that MUST only be used against systems you have written permission to test.
+**Status: FIXED in this session.** The `--rotate-mac`, `--tor`, and `--proxy-pool` flags now require `--authorized-target` flag matching the scan target. This was implemented as part of Phase 1 authorization hard-fail.
 
-**Current state:** The tool warns via `logger.warning()` but does not require an `--i-have-authorization` flag.  
-**Risk:** Accidental or malicious use against unauthorized targets.  
-**Planned fix:** `--rotate-mac` will require `--authorized-target` flag in v1.1.0.
-
-### GAP-7: README Claims vs Reality
+### GAP-4: README Claims vs Reality
 **Severity: Medium**
 
-The README states "Production/Stable" status. The PyPI classifier has been downgraded to "Beta". The README has not yet been updated to match.
+The README states "Production/Stable" status. The PyPI classifier in `pyproject.toml` has "Beta". The README has not been updated to match.
 
-**Planned fix:** README update pass in v1.1.0.
+**Planned fix:** README and classifier alignment in this session.
 
 ---
 
@@ -60,6 +77,7 @@ The README states "Production/Stable" status. The PyPI classifier has been downg
 - Zero-day fuzzer with `--zero-day-sensitivity high` generates significant HTTP traffic (1 request per payload per parameter). Use `medium` (default) or `low` for large targets.
 - Crawler wordlist probe adds ~30 extra requests per scan (COMMON_ROUTES list). Disable with `--modules` to exclude `zero_day` if not needed.
 - `--profile deep` against a target with many parameterized URLs can take 30+ minutes.
+- DNS resolution now has 3s timeout + 1-hour cache; same host resolved once per scan.
 
 ---
 

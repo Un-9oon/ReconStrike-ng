@@ -60,7 +60,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         try:
             resp = requests.request(
                 method=self.command, url=url, headers=req_headers, data=req_body,
-                allow_redirects=False, verify=False, timeout=self.upstream_timeout, stream=True)
+                allow_redirects=False, verify=self.proxy_ref.verify_ssl, timeout=self.upstream_timeout, stream=True)
         except (requests.RequestException, OSError) as exc:
             logger.debug("Proxy upstream error for %s: %s", url, exc)
             self.send_error(502, "Bad Gateway: {}".format(exc))
@@ -195,7 +195,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             try:
                 resp = requests.request(
                     method=method, url=url, headers=req_headers, data=req_body,
-                    allow_redirects=False, verify=False, timeout=self.upstream_timeout, stream=True)
+                    allow_redirects=False, verify=self.proxy_ref.verify_ssl, timeout=self.upstream_timeout, stream=True)
             except (requests.RequestException, OSError) as exc:
                 logger.debug("Proxy MITM upstream error for %s: %s", url, exc)
                 try:
@@ -286,9 +286,10 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
 
 class ProxyServer:
-    def __init__(self, port: int = 8087, ca_dir=None, bind_addr: str = "127.0.0.1"):
+    def __init__(self, port: int = 8087, ca_dir=None, bind_addr: str = "127.0.0.1", verify_ssl: bool = True):
         self.port = port
         self.bind_addr = bind_addr
+        self.verify_ssl = verify_ssl
         self.history = HistoryDB()
         self.findings: list[PassiveFinding] = []
         self._lock = threading.Lock()

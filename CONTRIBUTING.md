@@ -182,3 +182,35 @@ You will receive a response within 48 hours. We will coordinate disclosure after
 ## Code of Conduct
 
 This project follows the [Contributor Covenant Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). By participating, you agree to uphold a welcoming, inclusive, and harassment-free environment.
+
+---
+
+## Determinism Guidelines (Phase 2 Root Cause & Guard Test)
+
+### The Problem
+In versions prior to v1.0.1, four DAST modules (`idor`, `cors`, `hpp`, `cache_poisoning`) exhibited **non-deterministic detection**: running the same module against an identical target produced different finding counts across runs. Root cause analysis identified two independent issues:
+
+1. **ConcurrentCrawler ignored `extra_urls`** (`scanner/concurrent.py`): The crawler's initial queue contained only the base target URL, discarding any `--extra-urls` seeds. Modules that depend on operator-supplied unlinked endpoints (e.g., IDOR on `/user?id=`) received zero URLs to test, producing 0 findings intermittently depending on whether the target happened to link those endpoints.
+
+2. **`curl_cffi.Response` content handling** (`scanner/core.py::_safe_read`): The streaming reader assigned to `resp._content` instead of `resp.content`. Because `curl_cffi.Response` computes `.text` from `.content` (not `_content`), all downstream modules received empty response bodies, causing detection logic to silently fail. This manifested as intermittent findings because some requests completed before the bug was triggered.
+
+### The Fixes
+- `ConcurrentCrawler.crawl()` now prepends `config.extra_urls` to the initial queue with depth 0.
+- `_safe_read()` now assigns `resp.content = b"".join(chunks)` so `.text` works correctly.
+
+### Guard Test — `tests/test_determinism.py`
+A regression test suite ensures this class of bug cannot reappear:
+
+```python
+# Each module run 3× against vulnapp; all runs must return identical finding counts
+def test_idor_deterministic(self):
+    counts = [run_idor() for _ in range(3)]
+    assert len(set(counts)) == 1  # all equal
+```
+
+**Rule for Contributors:** Any new DAST module that iterates `session.crawled_urls` or `session.forms` **must**:
+- Add a determinism test in `test_determinism.py` (3× run, identical counts).
+- Ensure it works with `extra_urls` (i.e., doesn't assume the crawler discovered the endpoint organically).
+- If the module's logic depends on request/response ordering, document why and add explicit sorting (e.g., `sorted(session.crawled_urls)`) to eliminate thread-completion-order variance.
+
+The CI runs `pytest tests/test_determinism.py` on every push. A failure indicates a regression.

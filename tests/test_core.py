@@ -323,3 +323,48 @@ class TestSanitizePath:
         # Should not resolve to /etc/passwd; should stay in cwd
         assert not result.startswith("/etc")
         assert "passwd" in result
+
+    def test_absolute_path_outside_cwd_preserved(self, tmp_path):
+        """Absolute paths outside CWD should be preserved (not collapsed to basename)."""
+        output_file = tmp_path / "scan_results.json"
+        result = _sanitize_path(str(output_file))
+        assert result == str(output_file)
+        assert os.path.isabs(result)
+
+    def test_relative_path_with_dotdot_resolves_correctly(self, tmp_path):
+        """Relative paths with .. should resolve to actual location, not silently redirected."""
+        subdir = tmp_path / "subdir"
+        subdir.mkdir()
+        os.chdir(subdir)
+        try:
+            result = _sanitize_path("../output.json")
+            # Should resolve to tmp_path/output.json, not CWD/output.json
+            assert result == str(tmp_path / "output.json")
+        finally:
+            os.chdir(tmp_path)
+
+    def test_dangerous_path_blocked_and_redirected(self, caplog):
+        """Dangerous system paths (/etc, /boot, etc.) should be blocked with warning."""
+        import logging
+        caplog.set_level(logging.WARNING)
+        result = _sanitize_path("/etc/passwd")
+        assert not result.startswith("/etc")
+        assert "passwd" in result
+        assert any("dangerous system location" in record.message.lower() for record in caplog.records)
+        assert any("redirected" in record.message.lower() for record in caplog.records)
+
+    def test_no_write_permission_fallbacks_to_cwd(self, tmp_path, caplog):
+        """Paths without write permission should fallback to CWD with warning."""
+        import logging
+        caplog.set_level(logging.WARNING)
+        # Create a read-only directory
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir(mode=0o555)
+        try:
+            result = _sanitize_path(str(readonly_dir / "output.json"))
+            # Should fallback to CWD
+            assert result != str(readonly_dir / "output.json")
+            assert any("no write permission" in record.message.lower() for record in caplog.records)
+        finally:
+            # Restore permissions for cleanup
+            readonly_dir.chmod(0o755)
