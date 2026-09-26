@@ -11,7 +11,8 @@ from enum import Enum
 from typing import Optional
 from urllib.parse import urlparse
 
-import requests
+import curl_cffi.requests as requests
+requests.RequestException = requests.errors.RequestsError
 from colorama import Fore, Style
 
 from scanner.log import logger
@@ -370,9 +371,11 @@ class ScanSession:
             return False
 
     def add_finding(self, finding: Finding):
+        parsed_new = urlparse(finding.url)
         with self._lock:
             for existing in self.findings:
-                if existing.title == finding.title and existing.url == finding.url:
+                parsed_ex = urlparse(existing.url)
+                if existing.title == finding.title and parsed_ex.path == parsed_new.path:
                     return
             finding.description = _redact_sensitive(finding.description)
             finding.evidence = _redact_sensitive(finding.evidence)

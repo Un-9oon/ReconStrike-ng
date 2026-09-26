@@ -21,18 +21,53 @@ from typing import Optional
 
 from scanner.log import logger
 
+# Each entry: (user_agent_string, curl_cffi_impersonate_target)
+# curl_cffi target = None means fall back to requests (no TLS impersonation)
 _UA_POOL = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.53 Mobile Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 OPR/110.0.0.0",
+    # Chrome Windows
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36", "chrome120"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "chrome120"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "chrome120"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36", "chrome120"),
+    # Chrome macOS
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36", "chrome120"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "chrome120"),
+    # Chrome Linux
+    ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36", "chrome120"),
+    ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "chrome120"),
+    # Firefox Windows
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0", "firefox"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0", "firefox"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0", "firefox"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0", "firefox"),
+    # Firefox Linux
+    ("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0", "firefox"),
+    ("Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0", "firefox"),
+    # Safari macOS
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15", "safari15_5"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15", "safari15_5"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15", "safari15_5"),
+    # Edge Windows
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0", "chrome120"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0", "chrome120"),
+    # Opera
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 OPR/111.0.0.0", "chrome120"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 OPR/111.0.0.0", "chrome120"),
+    # Mobile Chrome Android
+    ("Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36", "chrome120"),
+    ("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.53 Mobile Safari/537.36", "chrome120"),
+    ("Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36", "chrome120"),
+    # Mobile Safari iOS
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1", "safari15_5"),
+    ("Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1", "safari15_5"),
+    # Brave (Chrome-based but different fingerprint)
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "chrome120"),
+    ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "chrome120"),
+    # Vivaldi
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Vivaldi/6.7.3329.35", "chrome120"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Vivaldi/6.7.3329.21", "chrome120"),
 ]
+
 
 
 @dataclass
@@ -40,6 +75,7 @@ class IdentityState:
     ip_address: str = "unknown"
     mac_address: str = "unknown"
     user_agent: str = ""
+    tls_impersonate: Optional[str] = None
     proxy: str = ""
     rotation_count: int = 0
     last_rotation: float = 0.0
@@ -61,7 +97,7 @@ class ANMConfig:
     rotate_mac: bool = False
     network_interface: str = ""
     rotate_ua: bool = True
-    min_rotation_interval: float = 10.0
+    min_rotation_interval: float = 0.0
     cooldown_after_block: float = 3.0
     max_rotations_per_scan: int = 50
     block_threshold: int = 3
@@ -405,7 +441,9 @@ class IdentityManager:
             self._state.mac_address = self._original_mac
 
         if config.rotate_ua:
-            self._state.user_agent = random.choice(_UA_POOL)
+            ua, tls = random.choice(_UA_POOL)
+            self._state.user_agent = ua
+            self._state.tls_impersonate = tls
 
         if config.use_tor:
             self._state.proxy = "socks5h://{}:{}".format(config.tor_socks_host, config.tor_socks_port)
@@ -419,6 +457,7 @@ class IdentityManager:
                 ip_address=self._state.ip_address,
                 mac_address=self._state.mac_address,
                 user_agent=self._state.user_agent,
+                tls_impersonate=self._state.tls_impersonate,
                 proxy=self._state.proxy,
                 rotation_count=self._state.rotation_count,
                 last_rotation=self._state.last_rotation,
@@ -583,8 +622,10 @@ class IdentityManager:
 
     def _rotate_ua(self):
         current = self._state.user_agent
-        candidates = [ua for ua in _UA_POOL if ua != current]
-        self._state.user_agent = random.choice(candidates) if candidates else random.choice(_UA_POOL)
+        candidates = [ua for ua in _UA_POOL if ua[0] != current]
+        ua, tls = random.choice(candidates) if candidates else random.choice(_UA_POOL)
+        self._state.user_agent = ua
+        self._state.tls_impersonate = tls
 
     def _rotate_waf_headers(self):
         self._waf_headers = random.choice(_WAF_EVASION_HEADERS_POOL)
@@ -624,6 +665,12 @@ class IdentityManager:
 
         if self._state.user_agent:
             session_obj.headers["User-Agent"] = self._state.user_agent
+        
+        if self._state.tls_impersonate:
+            try:
+                session_obj.impersonate = self._state.tls_impersonate
+            except AttributeError:
+                pass  # Ignore if it's a standard requests.Session instead of curl_cffi
 
         if hasattr(self, "_waf_headers") and self._waf_headers:
             for key, value in self._waf_headers.items():
@@ -660,6 +707,7 @@ class IdentityManager:
                     "ip": self._state.ip_address,
                     "mac": self._state.mac_address,
                     "user_agent": self._state.user_agent,
+                    "tls_impersonate": self._state.tls_impersonate,
                     "proxy": self._state.proxy,
                 },
                 "history": list(self._rotation_history),

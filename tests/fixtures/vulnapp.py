@@ -158,10 +158,17 @@ class VulnHandler(BaseHTTPRequestHandler):
             val = html_module.escape(params.get("q", [""])[0])
             self._html(200, f"<html><body><p>Safe: {val}</p></body></html>")
 
-        # SQLi — vulnerable: raw echo + SQL error keyword
+        # SQLi — vulnerable: raw echo + SQL error keyword only when metachar injected
         elif path == "/sqli":
             val = params.get("id", ["1"])[0]
-            self._html(200, f"<html><body><p>ID: {val} -- MySQLSyntaxErrorException: syntax error</p></body></html>")
+            import re as _re
+            _has_metachar = _re.search(r"['\"\-;]", val)
+            if _has_metachar:
+                body = ('<html><body><p>ID: ' + val +
+                        ' -- MySQLSyntaxErrorException: syntax error</p></body></html>')
+            else:
+                body = '<html><body><p>ID: ' + val + '</p></body></html>'
+            self._html(200, body)
 
         # SQLi — safe: integer-cast echo (negative)
         elif path == "/safe/sqli":

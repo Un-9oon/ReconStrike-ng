@@ -115,11 +115,29 @@ def _resp_text(resp) -> str:
         return ""
     try:
         return resp.text
-    except (UnicodeDecodeError, LookupError):
+    except Exception:
         try:
-            return resp.content.decode("utf-8", errors="replace")
+            return resp.content.decode("latin-1")  # latin-1 never fails for bytes
         except Exception:
             return ""
+
+
+def _safe_payload(payload: str) -> str:
+    """Return a URL-safe version of the payload string.
+
+    Raw byte-escape sequences inside a Python *str* (e.g. '\xc0\xaf')
+    can cause UnicodeEncodeError / UnicodeDecodeError when urllib encodes
+    them on Python 3.14+.  We encode to latin-1 and back so only
+    representable characters survive.
+    """
+    try:
+        payload.encode("utf-8")
+        return payload
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        try:
+            return payload.encode("latin-1").decode("latin-1")
+        except Exception:
+            return payload.encode("ascii", errors="replace").decode("ascii")
 
 
 def _get_baseline(session: ScanSession, url: str) -> dict:
@@ -204,12 +222,19 @@ def _fuzz_url_params(session: ScanSession, url: str, baseline: dict, min_signals
         for category, payloads in FUZZ_PAYLOADS.items():
             hits_for_cat = []
             for payload in payloads:
+                safe_pl = _safe_payload(payload)
                 test_params = dict(params)
-                test_params[param_name] = [payload]
+                test_params[param_name] = [safe_pl]
                 test_url = urlunparse(parsed._replace(query=urlencode(test_params, doseq=True)))
 
                 start = time.time()
-                resp = session.get(test_url, allow_redirects=False)
+                try:
+                    resp = session.get(test_url, allow_redirects=False)
+                except (UnicodeDecodeError, UnicodeEncodeError, ValueError):
+                    # requests evaluates redirect Location headers even with
+                    # allow_redirects=False; non-UTF-8 bytes in the URL can crash it.
+                    logger.debug("zero_day: skipping payload with un-encodable bytes: %r", safe_pl[:20])
+                    continue
                 elapsed = time.time() - start
 
                 anomalies = _analyze_response(resp, elapsed, baseline, payload, category)
@@ -257,20 +282,25 @@ def _fuzz_form_fields(session: ScanSession, baseline: dict, min_signals: int = _
             for category, payloads in FUZZ_PAYLOADS.items():
                 hits_for_cat = []
                 for payload in payloads:
+                    safe_pl = _safe_payload(payload)
                     form_data = {}
                     for other_inp in inputs:
                         other_name = other_inp.get("name", "")
                         if not other_name:
                             continue
-                        form_data[other_name] = payload if other_name == field_name else other_inp.get("value", "test")
+                        form_data[other_name] = safe_pl if other_name == field_name else other_inp.get("value", "test")
 
                     start = time.time()
-                    if method == "GET":
-                        test_url = action + "?" + urlencode(form_data)
-                        resp = session.get(test_url, allow_redirects=False)
-                    else:
-                        resp = session.post(action, data=form_data, allow_redirects=False)
-                        test_url = action
+                    try:
+                        if method == "GET":
+                            test_url = action + "?" + urlencode(form_data)
+                            resp = session.get(test_url, allow_redirects=False)
+                        else:
+                            resp = session.post(action, data=form_data, allow_redirects=False)
+                            test_url = action
+                    except (UnicodeDecodeError, UnicodeEncodeError, ValueError):
+                        logger.debug("zero_day: skipping form payload with un-encodable bytes: %r", safe_pl[:20])
+                        continue
                     elapsed = time.time() - start
 
                     anomalies = _analyze_response(resp, elapsed, baseline, payload, category)
