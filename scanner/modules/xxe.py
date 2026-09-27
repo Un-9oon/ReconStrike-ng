@@ -132,7 +132,7 @@ def _check_xml_endpoints(session: ScanSession):
             continue
 
         baseline_text = resp.text
-        urlparse(url)
+        parsed = urlparse(url)
 
         for entry in XXE_PAYLOADS:
             test_resp = session.post(url, data=entry["payload"], headers={"Content-Type": "application/xml"})

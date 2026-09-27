@@ -1,644 +1,212 @@
-import re
-from urllib.parse import urlparse
+"""
+Host Header Injection Module for ReconStrike-ng
 
-import requests
+Tests for Host header injection, password-reset poisoning, and web cache
+poisoning via Host header manipulation.
+"""
 
-from scanner.log import logger
-from scanner.core import Finding, Severity, ScanSession, build_curl
+from urllib.parse import urlparse, urljoin
+from scanner.core import ScanSession, Finding, Severity
 
-
-EVIL_HOST = "evil.attacker-controlled.com"
-EVIL_HOST_FQDN = "attacker.example.com"
-
-HOST_INJECTION_HEADERS = [
-    ("X-Forwarded-Host", "X-Forwarded-Host header"),
-    ("X-Host", "X-Host header"),
-    ("X-Forwarded-Server", "X-Forwarded-Server header"),
-    ("Forwarded", "Forwarded header (RFC 7239)"),
+EVIL_HOST = "evil-host-header-test.com"
+FORWARDED_HEADERS = [
+    "X-Forwarded-Host",
+    "X-Host",
+    "X-Forwarded-Server",
+    "X-HTTP-Host-Override",
+    "Forwarded",
 ]
 
-PASSWORD_RESET_PATTERNS = [
-    re.compile(r"(password|reset|recover|forgot|restore)", re.IGNORECASE),
-]
 
-LINK_REFLECTION_PATTERNS = [
-    re.compile(
-        r'(href|src|action|url|link|redirect|location)\s*[=:]\s*["\']?https?://' + re.escape(EVIL_HOST), re.IGNORECASE),
-    re.compile(re.escape(EVIL_HOST), re.IGNORECASE),
-]
+def run(session: ScanSession) -> None:
+    """Entry point for the Host Header Injection scanner module."""
+    tested_host_paths = set()
 
-REDIRECT_HEADERS = ["Location", "Refresh", "Content-Location"]
-
-
-def _is_password_reset_form(form):
-    action = form.get("action", "").lower()
-    inputs = form.get("inputs", [])
-
-    for pattern in PASSWORD_RESET_PATTERNS:
-        if pattern.search(action):
-            return True
-
-    field_names = [inp.get("name", "").lower() for inp in inputs]
-    has_email = any("email" in n or "mail" in n for n in field_names)
-    has_no_password = not any("password" in n or "passwd" in n for n in field_names)
-    has_reset_indicator = any(
-        "reset" in n or "forgot" in n or "recover" in n for n in field_names
-    )
-
-    if has_email and has_no_password and has_reset_indicator:
-        return True
-    if has_email and has_no_password and len(inputs) <= 3:
-        return True
-
-    return False
+    for url in list(session.crawled_urls):
+        parsed = urlparse(url)
+        host_path = f"{parsed.netloc}{parsed.path}"
+        if host_path not in tested_host_paths:
+            tested_host_paths.add(host_path)
+            _test_host_header_direct(session, url)
+            _test_forwarded_headers(session, url)
 
 
-def _check_host_in_response(body, headers_dict, evil_host):
-    findings = []
-
-    if evil_host.lower() in body.lower():
-        idx = body.lower().find(evil_host.lower())
-        start, end = max(0, idx - 80), min(len(body), idx + len(evil_host) + 80)
-        snippet = body[start:end].replace('\n', ' ').strip()
-        in_link = any(p.search(body) for p in LINK_REFLECTION_PATTERNS)
-
-        findings.append({
-            "location": "response body",
-            "in_link": in_link,
-            "snippet": snippet,
-        })
-
-    for header_name in REDIRECT_HEADERS:
-        header_val = headers_dict.get(header_name, "")
-        if evil_host.lower() in header_val.lower():
-            findings.append({
-                "location": "response header ({header_name})",
-                "in_link": True,
-                "snippet": "{header_name}: {header_val}",
-            })
-
-    return findings
-
-
-def _test_host_header_direct(session, url):
-    """Test direct Host header manipulation."""
+def _test_host_header_direct(session: ScanSession, url: str) -> None:
+    """Test replacing the Host header directly with an arbitrary domain."""
     parsed = urlparse(url)
-    parsed.netloc
+    original_host = parsed.netloc
 
-    # Test 1: Replace Host header with evil host
-    try:
-        resp = session.session.get(
-            url,
-            headers={"Host": EVIL_HOST},
-            timeout=session.config.timeout,
-            verify=session.config.verify_ssl,
-            allow_redirects=False,
-        )
-    except (requests.RequestException, ValueError) as e:
-        logger.debug("host_header _test_host_override: request failed: %s", e)
-        return
+    headers = {"Host": EVIL_HOST}
+    resp = session.get(url, headers=headers, allow_redirects=False)
 
     if not resp:
         return
 
-    body = resp.text if hasattr(resp, 'text') else ""
-    headers_dict = dict(resp.headers)
-
-    reflections = _check_host_in_response(body, headers_dict, EVIL_HOST)
-
+    # Check 1: Reflected Host in response body (links, scripts, etc.)
+    reflections = _find_reflections(resp.text, EVIL_HOST)
     if reflections:
         reflection = reflections[0]
-        curl_cmd = build_curl("GET", url, headers={"Host": EVIL_HOST})
-
-        severity = Severity.HIGH if reflection["in_link"] else Severity.MEDIUM
-
         session.add_finding(Finding(
-            title="Host Header Injection (Direct Host Override)",
-            severity=severity,
+            module="host_header",
+            title="Host Header Reflection / Injection",
+            severity=Severity.HIGH,
+            url=url,
             description=(
-                "The application at '{original_host}' reflects a manipulated Host header "
-                "value in its response. When the Host header was set to '{EVIL_HOST}', "
-                "the injected value appeared in the {reflection['location']}. "
-                + (
-                    "The injected host appears in a URL/link context, which could be "
-                    "exploited for password reset poisoning, cache poisoning, or phishing."
-                    if reflection["in_link"] else
-                    "The injected host appears in the response content, indicating the "
-                    "application uses the Host header to generate content without validation."
-                )
+                f"The application at '{original_host}' reflects a manipulated Host header "
+                f"value in its response. When the Host header was set to '{EVIL_HOST}', "
+                f"the injected value appeared in the {reflection['location']}. "
+                f"The injected host appears in a URL/link context, which could be exploited "
+                f"for password reset poisoning, cache poisoning, or phishing."
             ),
             evidence=(
-                "URL: {url}\n"
-                "Original Host: {original_host}\n"
-                "Injected Host: {EVIL_HOST}\n"
-                "Reflection Location: {reflection['location']}\n"
-                "In Link/URL Context: {reflection['in_link']}\n"
-                "Response Status: {resp.status_code}\n"
-                "Context: {reflection['snippet']}"
+                f"URL: {url}\n"
+                f"Original Host: {original_host}\n"
+                f"Injected Host: {EVIL_HOST}\n"
+                f"Reflection Location: {reflection['location']}\n"
+                f"In Link/URL Context: {reflection['in_link']}\n"
+                f"Response Status: {resp.status_code}\n"
+                f"Context: {reflection['snippet']}"
             ),
-            remediation=(
-                "1. Never use the Host header to generate URLs, links, or redirects.\n"
-                "2. Configure a server-side whitelist of allowed Host header values.\n"
-                "3. Use a hardcoded or environment-variable-based base URL for link generation.\n"
-                "4. Configure the web server to reject requests with unexpected Host headers:\n"
-                "   - Nginx: Use a default server block that returns 444 for unknown hosts.\n"
-                "   - Apache: Configure ServerName and reject unmatched requests.\n"
-                "5. Validate the Host header against the expected domain before use."
-            ),
-            url=url,
-            module="host_header",
             cwe="CWE-644",
-            confirmed=True,
-            location="Host header processing at {parsed.path}",
-            parameter="Host",
-            payload="Host: {EVIL_HOST}",
-            request_method="GET",
-            request_headers="Host: {EVIL_HOST}",
-            response_status=resp.status_code,
-            curl_command=curl_cmd,
-            reproduction_steps=(
-                "1. Send a GET request to {url} with a manipulated Host header.\n"
-                "2. Run: {curl_cmd}\n"
-                "3. Examine the response for the injected host '{EVIL_HOST}'.\n"
-                "4. Check the {reflection['location']} for the reflected value."
+            remediation=(
+                "Validate the Host header against a whitelist of trusted domain names. "
+                "Use relative URLs for links and redirects instead of absolute URLs built "
+                "from the Host header."
             ),
-            developer_fix=(
-                "File: Application configuration or middleware.\n\n"
-                "VULNERABLE pattern:\n"
-                "  base_url = request.headers['Host']  # Attacker-controlled!\n"
-                "  link = f'https://{{base_url}}/reset?token={{token}}'\n\n"
-                "SECURE pattern:\n"
-                "  # Use a hardcoded or config-based base URL\n"
-                "  BASE_URL = os.environ.get('BASE_URL', 'https://{original_host}')\n"
-                "  link = f'{{BASE_URL}}/reset?token={{token}}'\n\n"
-                "  Nginx - reject unknown hosts:\n"
-                "  server {{\n"
-                "    listen 80 default_server;\n"
-                "    return 444;  # Drop connections with unknown Host\n"
-                "  }}\n"
-                "  server {{\n"
-                "    listen 80;\n"
-                "    server_name {original_host};\n"
-                "    ...\n"
-                "  }}"
-            ),
-            affected_component="Host header processing / URL generation at {parsed.netloc}",
-            references="https://portswigger.net/web-security/host-header | https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/17-Testing_for_Host_Header_Injection",
-            detection_method="Sent a request with 'Host: {EVIL_HOST}' and detected the injected host in the {reflection['location']} of the response.",
         ))
 
-    # Test 2: Host header with port injection
-    injected_host = "{original_host}@{EVIL_HOST}"
-    try:
-        resp = session.session.get(
-            url,
-            headers={"Host": injected_host},
-            timeout=session.config.timeout,
-            verify=session.config.verify_ssl,
-            allow_redirects=False,
-        )
-    except (requests.RequestException, ValueError) as e:
-        logger.debug("host_header _test_host_override: port injection request failed: %s", e)
-        return
-
-    if resp:
-        body = resp.text if hasattr(resp, 'text') else ""
-        headers_dict = dict(resp.headers)
-        reflections = _check_host_in_response(body, headers_dict, EVIL_HOST)
-
-        if reflections:
-            reflection = reflections[0]
-            curl_cmd = build_curl("GET", url, headers={"Host": injected_host})
+    # Check 2: Host header reflected in redirect Location
+    if resp.status_code in (301, 302, 303, 307, 308):
+        location = resp.headers.get("Location", "")
+        if EVIL_HOST in location:
             session.add_finding(Finding(
-                title="Host Header Injection (@ Character Bypass)",
+                module="host_header",
+                title="Host Header Injection in Redirect Location",
                 severity=Severity.HIGH,
-                description=(
-                    "The application processes a Host header containing an '@' character "
-                    "('{injected_host}'), which can be used to bypass host validation. "
-                    "URL parsers may interpret the portion before '@' as credentials and "
-                    "the portion after as the actual host, leading to routing-based SSRF."
-                ),
-                evidence=(
-                    "URL: {url}\n"
-                    "Injected Host: {injected_host}\n"
-                    "Reflection Location: {reflection['location']}\n"
-                    "Response Status: {resp.status_code}\n"
-                    "Context: {reflection['snippet']}"
-                ),
-                remediation=(
-                    "1. Reject Host headers containing '@', ':', or other unexpected characters.\n"
-                    "2. Parse and validate the Host header before any use.\n"
-                    "3. Use a strict allowlist for valid Host header values.\n"
-                    "4. Never use the Host header for routing decisions."
-                ),
                 url=url,
-                module="host_header",
-                cwe="CWE-644",
-                confirmed=True,
-                location="Host header parsing at {parsed.path}",
-                parameter="Host",
-                payload="Host: {injected_host}",
-                request_method="GET",
-                request_headers="Host: {injected_host}",
-                response_status=resp.status_code,
-                curl_command=curl_cmd,
-                reproduction_steps=(
-                    "1. Send a request with Host: {injected_host}\n"
-                    "2. Run: {curl_cmd}\n"
-                    "3. Observe '{EVIL_HOST}' reflected in the response."
-                ),
-                developer_fix=(
-                    "Validate Host header strictly:\n"
-                    "  if '@' in request.headers.get('Host', ''):\n"
-                    "      abort(400, 'Invalid Host header')"
-                ),
-                affected_component="Host header parsing at {parsed.netloc}",
-                references="https://portswigger.net/web-security/host-header/exploiting",
-                detection_method="Injected Host header with '@' character ('{injected_host}') and detected the attacker-controlled portion reflected in the response.",
-            ))
-
-
-def _test_forwarded_headers(session, url):
-    """Test X-Forwarded-Host and similar headers for host injection."""
-    urlparse(url)
-
-    for header_name, header_desc in HOST_INJECTION_HEADERS:
-        if header_name == "Forwarded":
-            header_value = "host={EVIL_HOST_FQDN}"
-        else:
-            header_value = EVIL_HOST_FQDN
-
-        try:
-            resp = session.session.get(
-                url,
-                headers={header_name: header_value},
-                timeout=session.config.timeout,
-                verify=session.config.verify_ssl,
-                allow_redirects=False,
-            )
-        except (requests.RequestException, ValueError) as e:
-            logger.debug("host_header _test_forwarded_headers: request failed: %s", e)
-            continue
-
-        if not resp:
-            continue
-
-        body = resp.text if hasattr(resp, 'text') else ""
-        headers_dict = dict(resp.headers)
-
-        reflections = _check_host_in_response(body, headers_dict, EVIL_HOST_FQDN)
-
-        if reflections:
-            reflection = reflections[0]
-            curl_cmd = build_curl("GET", url, headers={header_name: header_value})
-
-            severity = Severity.HIGH if reflection["in_link"] else Severity.MEDIUM
-
-            session.add_finding(Finding(
-                title="Host Header Injection via {header_name}",
-                severity=severity,
                 description=(
-                    "The application at '{parsed.netloc}' reflects the value of the "
-                    "'{header_name}' header in its response. When set to '{EVIL_HOST_FQDN}', "
-                    "the injected value appeared in the {reflection['location']}. "
-                    "This header is often trusted by applications behind reverse proxies "
-                    "and can be exploited for password reset poisoning, web cache poisoning, "
-                    "or open redirect attacks."
+                    f"The application uses the client-supplied Host header to construct "
+                    f"redirect URLs. When the Host header was set to '{EVIL_HOST}', the "
+                    f"Location header returned was '{location}'. An attacker can use this "
+                    f"to redirect users to arbitrary external domains."
                 ),
                 evidence=(
-                    "URL: {url}\n"
-                    "Header: {header_name}: {header_value}\n"
-                    "Reflection Location: {reflection['location']}\n"
-                    "In Link/URL Context: {reflection['in_link']}\n"
-                    "Response Status: {resp.status_code}\n"
-                    "Context: {reflection['snippet']}"
+                    f"URL: {url}\n"
+                    f"Original Host: {original_host}\n"
+                    f"Injected Host: {EVIL_HOST}\n"
+                    f"Location Header: {location}\n"
+                    f"Response Status: {resp.status_code}"
                 ),
+                cwe="CWE-601",
                 remediation=(
-                    "1. Do not trust the '{header_name}' header for generating URLs or links.\n"
-                    "2. If behind a reverse proxy, configure it to strip or overwrite this header.\n"
-                    "3. Use a hardcoded base URL from application configuration.\n"
-                    "4. If the header is needed, validate it against an allowlist of known values.\n"
-                    "5. Configure the reverse proxy to set the header and reject client-supplied values:\n"
-                    "   - Nginx: proxy_set_header X-Forwarded-Host $host;\n"
-                    "   - Apache: RequestHeader set X-Forwarded-Host \"expected.domain.com\""
+                    "Use relative URLs in Location headers, or validate the Host header "
+                    "against an explicit whitelist before constructing redirect targets."
                 ),
-                url=url,
-                module="host_header",
-                cwe="CWE-644",
-                confirmed=True,
-                location="{header_name} header processing at {parsed.path}",
-                parameter=header_name,
-                payload="{header_name}: {header_value}",
-                request_method="GET",
-                request_headers="{header_name}: {header_value}",
-                response_status=resp.status_code,
-                curl_command=curl_cmd,
-                reproduction_steps=(
-                    "1. Send a GET request to {url} with the header: {header_name}: {header_value}\n"
-                    "2. Run: {curl_cmd}\n"
-                    "3. Examine the response for '{EVIL_HOST_FQDN}' in the {reflection['location']}."
-                ),
-                developer_fix=(
-                    "File: Application middleware or reverse proxy config.\n\n"
-                    "VULNERABLE pattern:\n"
-                    "  host = request.headers.get('{header_name}', request.host)\n"
-                    "  link = f'https://{{host}}/action'\n\n"
-                    "SECURE pattern:\n"
-                    "  # Ignore {header_name} for URL generation\n"
-                    "  BASE_URL = os.environ['BASE_URL']  # e.g., 'https://{parsed.netloc}'\n"
-                    "  link = f'{{BASE_URL}}/action'\n\n"
-                    "  Nginx - overwrite the header:\n"
-                    "  proxy_set_header {header_name} $host;\n\n"
-                    "  Apache - set a trusted value:\n"
-                    "  RequestHeader set {header_name} \"{parsed.netloc}\""
-                ),
-                affected_component="{header_name} handling in {parsed.netloc}",
-                references="https://portswigger.net/web-security/host-header | https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/17-Testing_for_Host_Header_Injection",
-                detection_method="Sent '{header_name}: {header_value}' header and detected the injected host reflected in the {reflection['location']} of the response.",
             ))
-            return  # One finding per URL is sufficient
 
 
-def _test_password_reset_poisoning(session, form):
-    """Test password reset forms for host header poisoning."""
-    if not _is_password_reset_form(form):
-        return
-
-    action = form.get("action", "")
-    inputs = form.get("inputs", [])
-    source_url = form.get("source_url", action)
-    urlparse(action)
-
-    # Build form data with a test email
-    form_data = {}
-    for inp in inputs:
-        name = inp.get("name")
-        if not name:
-            continue
-        name_lower = name.lower()
-        if "email" in name_lower or "mail" in name_lower:
-            form_data[name] = "test@example.com"
-        elif "user" in name_lower:
-            form_data[name] = "testuser"
-        elif inp.get("value"):
-            form_data[name] = inp["value"]
-
-    # Test with manipulated Host header
-    headers_to_test = [
-        ("Host", EVIL_HOST, "Direct Host header"),
-    ] + [
-        (h, EVIL_HOST_FQDN, desc) for h, desc in HOST_INJECTION_HEADERS
-    ]
-
-    for header_name, header_value, technique in headers_to_test:
-        if header_name == "Forwarded":
-            actual_value = "host={header_value}"
-        else:
-            actual_value = header_value
-
-        try:
-            resp = session.session.post(
-                action,
-                data=form_data,
-                headers={header_name: actual_value},
-                timeout=session.config.timeout,
-                verify=session.config.verify_ssl,
-                allow_redirects=False,
-            )
-        except (requests.RequestException, ValueError) as e:
-            logger.debug("host_header _test_password_reset_poisoning: request failed: %s", e)
-            continue
-
-        if not resp:
-            continue
-
-        # Check if the form submission was accepted (indicates the reset email was sent)
-        if resp.status_code not in (200, 201, 302, 303):
-            continue
-
-        body = resp.text if hasattr(resp, 'text') else ""
-        headers_dict = dict(resp.headers)
-
-        # Check for the evil host in the response
-        evil_host_for_check = header_value
-        reflections = _check_host_in_response(body, headers_dict, evil_host_for_check)
-
-        # Even without reflection, if the reset was accepted, it's noteworthy
-        # because the reset email may contain the poisoned link
-        if reflections:
-            reflections[0]
-            data_str = "&".join("{k}={v}" for k, v in form_data.items())
-            curl_cmd = build_curl(
-                "POST", action,
-                headers={header_name: actual_value},
-                data=data_str,
-            )
-            session.add_finding(Finding(
-                title="Password Reset Poisoning via {header_name}",
-                severity=Severity.HIGH,
-                description=(
-                    "The password reset form at '{action}' is vulnerable to host header "
-                    "poisoning via the '{header_name}' header. When a password reset was "
-                    "submitted with '{header_name}: {actual_value}', the injected host "
-                    "appeared in the {reflection['location']}. This strongly suggests the "
-                    "password reset email will contain a link pointing to the attacker's "
-                    "domain, allowing token theft when the victim clicks it."
-                ),
-                evidence=(
-                    "Form Action: {action}\n"
-                    "Header: {header_name}: {actual_value}\n"
-                    "Technique: {technique}\n"
-                    "Form Data: {form_data}\n"
-                    "Response Status: {resp.status_code}\n"
-                    "Reflection Location: {reflection['location']}\n"
-                    "Context: {reflection['snippet']}"
-                ),
-                remediation=(
-                    "1. NEVER use the Host header to construct password reset links.\n"
-                    "2. Store the application base URL in server-side configuration.\n"
-                    "3. Ignore X-Forwarded-Host and similar headers for security-critical operations.\n"
-                    "4. Configure the reverse proxy to strip or overwrite forwarded host headers.\n"
-                    "5. Validate the Host header against a whitelist before any use.\n"
-                    "6. Generate reset tokens as one-time-use and time-limited."
-                ),
-                url=source_url,
-                module="host_header",
-                cwe="CWE-644",
-                confirmed=True,
-                location="Password reset form at {action}",
-                parameter=header_name,
-                payload="{header_name}: {actual_value}",
-                request_method="POST",
-                request_headers="{header_name}: {actual_value}",
-                request_body=data_str,
-                response_status=resp.status_code,
-                curl_command=curl_cmd,
-                reproduction_steps=(
-                    "1. Navigate to the password reset page: {source_url}\n"
-                    "2. Enter a valid email address in the form.\n"
-                    "3. Intercept the request and add the header: {header_name}: {actual_value}\n"
-                    "4. Submit the form.\n"
-                    "5. Run: {curl_cmd}\n"
-                    "6. Check the password reset email for a link pointing to '{evil_host_for_check}'.\n"
-                    "7. The attacker's server at '{evil_host_for_check}' would receive the reset token."
-                ),
-                developer_fix=(
-                    "File: Password reset handler for POST {action}.\n\n"
-                    "VULNERABLE pattern:\n"
-                    "  host = request.headers.get('{header_name}', request.host)\n"
-                    "  reset_link = f'https://{{host}}/reset?token={{token}}'\n"
-                    "  send_email(user.email, reset_link)\n\n"
-                    "SECURE pattern:\n"
-                    "  # Use a hardcoded base URL from config\n"
-                    "  BASE_URL = os.environ['APP_BASE_URL']  # 'https://{parsed.netloc}'\n"
-                    "  reset_link = f'{{BASE_URL}}/reset?token={{token}}'\n"
-                    "  send_email(user.email, reset_link)"
-                ),
-                affected_component="Password reset functionality at {action}",
-                references="https://portswigger.net/web-security/host-header/exploiting/password-reset-poisoning | https://www.skeletonscribe.net/2013/05/practical-http-host-header-attacks.html",
-                detection_method="Submitted a password reset request with '{header_name}: {actual_value}' and detected the injected host reflected in the {reflection['location']}, indicating the reset link uses the attacker-controlled host.",
-            ))
-            return
-
-
-def _test_routing_ssrf(session, url):
-    """Test for routing-based SSRF via Host header."""
+def _test_forwarded_headers(session: ScanSession, url: str) -> None:
+    """Test override headers like X-Forwarded-Host for reflection/injection."""
     parsed = urlparse(url)
-    parsed.netloc
+    original_host = parsed.netloc
 
-    # Test with an internal hostname to see if the server routes differently
-    internal_targets = [
-        ("localhost", "localhost routing"),
-        ("127.0.0.1", "loopback routing"),
-        ("0.0.0.0", "wildcard binding"),
-        ("169.254.169.254", "cloud metadata endpoint"),
-        ("internal.{parsed.hostname}", "internal subdomain"),
-    ]
-
-    for internal_host, technique in internal_targets:
-        try:
-            resp = session.session.get(
-                url,
-                headers={"Host": internal_host},
-                timeout=session.config.timeout,
-                verify=session.config.verify_ssl,
-                allow_redirects=False,
-            )
-        except (requests.RequestException, ValueError) as e:
-            logger.debug("host_header _test_routing_ssrf: request failed: %s", e)
-            continue
+    for header_name in FORWARDED_HEADERS:
+        headers = {header_name: EVIL_HOST}
+        resp = session.get(url, headers=headers, allow_redirects=False)
 
         if not resp:
             continue
 
-        # Check for signs of internal routing
-        # - Different response from baseline
-        # - Cloud metadata patterns
-        # - Internal error pages
-        body = resp.text if hasattr(resp, 'text') else ""
-
-        ssrf_indicators = [
-            # AWS metadata
-            re.search(r"ami-id|instance-id|iam/security-credentials", body, re.IGNORECASE),
-            # GCP metadata
-            re.search(r"computeMetadata|project-id", body, re.IGNORECASE),
-            # Azure metadata
-            re.search(r"azEnvironment|subscriptionId", body, re.IGNORECASE),
-            # Internal services
-            re.search(r"(internal server|admin panel|management console|debug mode)", body, re.IGNORECASE),
-        ]
-
-        if any(ssrf_indicators):
-            next(m for m in ssrf_indicators if m)
-            curl_cmd = build_curl("GET", url, headers={"Host": internal_host})
+        reflections = _find_reflections(resp.text, EVIL_HOST)
+        if reflections:
+            reflection = reflections[0]
             session.add_finding(Finding(
-                title="Routing-Based SSRF via Host Header ({internal_host})",
-                severity=Severity.CRITICAL,
+                module="host_header",
+                title=f"Host Override via {header_name}",
+                severity=Severity.HIGH,
+                url=url,
                 description=(
-                    "The application routes requests based on the Host header. When the "
-                    "Host header was set to '{internal_host}' ({technique}), the server "
-                    "returned content from an internal service. This allows an attacker "
-                    "to access internal resources, cloud metadata, or admin panels by "
-                    "manipulating the Host header."
+                    f"The application processes the '{header_name}' header and reflects "
+                    f"its value in the response body. When '{header_name}' was set to "
+                    f"'{EVIL_HOST}', the injected value was reflected. This indicates "
+                    f"that backend components trust reverse-proxy headers without "
+                    f"validation, enabling host header attack vectors."
                 ),
                 evidence=(
-                    "URL: {url}\n"
-                    "Original Host: {original_host}\n"
-                    "Injected Host: {internal_host}\n"
-                    "Technique: {technique}\n"
-                    "Response Status: {resp.status_code}\n"
-                    "SSRF Indicator: {indicator.group(0)}\n"
-                    "Response Snippet: {body[:500]}"
+                    f"URL: {url}\n"
+                    f"Header Used: {header_name}\n"
+                    f"Injected Host: {EVIL_HOST}\n"
+                    f"Response Status: {resp.status_code}\n"
+                    f"Context: {reflection['snippet']}"
                 ),
-                remediation=(
-                    "1. Never use the Host header for internal routing decisions.\n"
-                    "2. Configure the web server to reject requests with unexpected Host values.\n"
-                    "3. Implement a strict Host header whitelist at the reverse proxy level.\n"
-                    "4. Ensure internal services are not accessible via Host header manipulation.\n"
-                    "5. Use network-level segmentation to isolate internal services."
-                ),
-                url=url,
-                module="host_header",
                 cwe="CWE-644",
-                confirmed=True,
-                location="Host-based routing at {parsed.path}",
-                parameter="Host",
-                payload="Host: {internal_host}",
-                request_method="GET",
-                request_headers="Host: {internal_host}",
-                response_status=resp.status_code,
-                curl_command=curl_cmd,
-                reproduction_steps=(
-                    "1. Send a GET request to {url} with Host: {internal_host}\n"
-                    "2. Run: {curl_cmd}\n"
-                    "3. Observe that the response contains internal service content.\n"
-                    "4. The indicator '{indicator.group(0)}' confirms internal routing."
+                remediation=(
+                    f"Disable support for '{header_name}' if reverse proxies are not in use, "
+                    f"or ensure the front-end proxy strips or overrides unverified "
+                    f"forwarded headers before passing requests to backend application servers."
                 ),
-                developer_fix=(
-                    "File: Reverse proxy / load balancer configuration.\n\n"
-                    "Nginx - strict host validation:\n"
-                    "  server {{\n"
-                    "    listen 80 default_server;\n"
-                    "    return 444;  # Reject unknown hosts\n"
-                    "  }}\n"
-                    "  server {{\n"
-                    "    listen 80;\n"
-                    "    server_name {original_host};  # Only accept valid host\n"
-                    "    ...\n"
-                    "  }}\n\n"
-                    "  Application level:\n"
-                    "  ALLOWED_HOSTS = ['{original_host}']\n"
-                    "  if request.host not in ALLOWED_HOSTS:\n"
-                    "      abort(400)"
-                ),
-                affected_component="Host-based routing at {parsed.netloc}",
-                references="https://portswigger.net/web-security/host-header/exploiting | https://portswigger.net/research/cracking-the-lens-targeting-https-hidden-attack-surface",
-                detection_method="Set Host header to '{internal_host}' ({technique}) and detected internal service content in the response, confirming host-based routing SSRF.",
             ))
-            return
+
+        if resp.status_code in (301, 302, 303, 307, 308):
+            location = resp.headers.get("Location", "")
+            if EVIL_HOST in location:
+                session.add_finding(Finding(
+                    module="host_header",
+                    title=f"Host Override via {header_name} in Redirect",
+                    severity=Severity.HIGH,
+                    url=url,
+                    description=(
+                        f"The application uses the '{header_name}' header value to build "
+                        f"redirect URLs. Injected header value '{EVIL_HOST}' was reflected "
+                        f"in the Location header: '{location}'."
+                    ),
+                    evidence=(
+                        f"URL: {url}\n"
+                        f"Header Used: {header_name}\n"
+                        f"Injected Host: {EVIL_HOST}\n"
+                        f"Location Header: {location}\n"
+                        f"Response Status: {resp.status_code}"
+                    ),
+                    cwe="CWE-601",
+                    remediation=(
+                        f"Ensure '{header_name}' headers from untrusted clients are stripped "
+                        f"by the edge proxy or web server."
+                    ),
+                ))
 
 
-def run(session: ScanSession) -> None:
-    logger.info("\n[*] Testing for Host Header Injection...")
+def _find_reflections(html_content: str, search_str: str) -> list:
+    """Find occurrences of search_str in html_content and extract context."""
+    results = []
+    lower_html = html_content.lower()
+    lower_search = search_str.lower()
 
-    tested_hosts = set()
+    idx = 0
+    while True:
+        pos = lower_html.find(lower_search, idx)
+        if pos == -1:
+            break
 
-    for url in session.crawled_urls:
-        parsed = urlparse(url)
-        host = parsed.netloc
+        start = max(0, pos - 40)
+        end = min(len(html_content), pos + len(search_str) + 40)
+        snippet = html_content[start:end].replace("\n", " ").replace("\r", "")
 
-        # Test direct host header and forwarded headers once per unique host+path
-        host_path = "{host}{parsed.path}"
-        if host_path not in tested_hosts:
-            tested_hosts.add(host_path)
-            _test_host_header_direct(session, url)
-            _test_forwarded_headers(session, url)
+        in_link = False
+        tag_start = html_content.rfind("<", 0, pos)
+        tag_end = html_content.find(">", pos)
+        if tag_start != -1 and tag_end != -1 and tag_start < tag_end:
+            tag_content = html_content[tag_start:tag_end + 1].lower()
+            if any(attr in tag_content for attr in ("href=", "src=", "action=")):
+                in_link = True
 
-        # Test routing SSRF once per host
-        if host not in tested_hosts:
-            tested_hosts.add(host)
-            _test_routing_ssrf(session, url)
+        location = "HTML attribute / URL context" if in_link else "response body text"
 
-    # Test password reset forms for host header poisoning
-    for form in session.forms:
-        _test_password_reset_poisoning(session, form)
+        results.append({
+            "snippet": snippet,
+            "in_link": in_link,
+            "location": location,
+        })
+
+        idx = pos + len(search_str)
+
+    return results

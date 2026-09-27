@@ -45,7 +45,7 @@ def _check_cookie_attributes(session: ScanSession, url: str) -> None:
 
     for cookie in session_cookies:
         issues = []
-        urlparse(url)
+        parsed = urlparse(url)
 
         if not cookie.secure:
             issues.append("Missing 'Secure' flag - cookie sent over unencrypted HTTP")

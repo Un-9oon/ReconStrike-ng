@@ -153,6 +153,7 @@ class VulnHandler(BaseHTTPRequestHandler):
 <a href="/ws">WebSocket Page</a>
 <a href="/deserialize?data=rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAU=">Deserialize</a>
 <a href="/page1">Page 1</a>
+<a href="/host-reflect">Host Reflect</a>
 <a href="/redirect?url=http://example.com">Click here</a>
 </body></html>""")
 
