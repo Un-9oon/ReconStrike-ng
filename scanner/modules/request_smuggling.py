@@ -1,4 +1,18 @@
+"""
+HTTP Request Smuggling Scanner Module for ReconStrike-ng
+
+Tests for CL.TE and TE.CL Request Smuggling, Transfer-Encoding obfuscation,
+and HTTP version mismatches in proxy chains.
+
+Per RFC 7230 §3.3.3:
+Rejecting dual Content-Length / Transfer-Encoding requests with a 4xx or 5xx
+error (such as 400 Bad Request or 501 Not Implemented) is SAFE, RECOMMENDED behavior.
+This module relies strictly on differential timing signals (socket hangs) or
+response desynchronization (queue poisoning) to identify true vulnerabilities.
+"""
+
 import re
+import time
 from urllib.parse import urlparse
 
 import requests
@@ -20,10 +34,10 @@ CLTE_PAYLOADS = [
     {
         "name": "CL.TE with smuggled GET",
         "headers": {"Content-Length": "30", "Transfer-Encoding": "chunked"},
-        "body": "0\r\n\r\nGET /404-test HTTP/1.1\r\n\r\n",
+        "body": "0\r\n\r\nGET /404-smuggled-probe HTTP/1.1\r\n\r\n",
         "description": (
             "Smuggles a partial GET after the chunked terminator. Backend "
-            "may route 'GET /404-test' and return 404 instead of the expected response."
+            "may route 'GET /404-smuggled-probe' and return 404 instead of the expected response."
         ),
     },
 ]
@@ -49,7 +63,7 @@ TE_OBFUSCATION_HEADERS = [
     {"Transfer-Encoding": "chunked\x00"},
 ]
 
-ERROR_CODES = (400, 500, 501, 502, 503)
+SAFE_REJECTION_CODES = (400, 403, 405, 501, 502, 503)
 
 
 def _build_curl_smuggle(method, url, headers, body):
@@ -62,8 +76,8 @@ def _build_curl_smuggle(method, url, headers, body):
     return cmd
 
 
-def _smuggle_test(session, url, payloads, technique_label):
-    """Common logic for CL.TE and TE.CL smuggling tests."""
+def _smuggle_test(session: ScanSession, url: str, payloads: list, technique_label: str) -> None:
+    """Common differential logic for CL.TE and TE.CL smuggling tests."""
     parsed = urlparse(url)
 
     for payload in payloads:
@@ -71,50 +85,70 @@ def _smuggle_test(session, url, payloads, technique_label):
             headers = dict(payload["headers"])
             body = payload["body"]
 
+            # Measure baseline response time & status
+            start_base = time.time()
             baseline = session.get(url)
-            if not baseline:
+            base_time = time.time() - start_base
+
+            if not baseline or baseline.status_code in SAFE_REJECTION_CODES:
                 continue
 
-            resp = session.post(url, headers=headers, data=body.encode("latin-1"))
-            if not resp:
+            # Send probe request and measure elapsed time
+            start_probe = time.time()
+            timed_out = False
+            resp = None
+            try:
+                resp = session.post(url, headers=headers, data=body.encode("latin-1"), timeout=5.0)
+            except (requests.Timeout, requests.RequestException, OSError):
+                timed_out = True
+            probe_time = time.time() - start_probe
+
+            # 1. Safe Rejection Check per RFC 7230 §3.3.3:
+            # If server returns a 4xx/5xx rejection (400 Bad Request, 501 Not Implemented, etc.),
+            # it is correctly rejecting dual CL/TE headers. THIS IS NOT A VULNERABILITY.
+            if resp and resp.status_code in SAFE_REJECTION_CODES:
                 continue
 
             smuggling_detected = False
             evidence_details = []
 
-            if resp.status_code in ERROR_CODES and baseline.status_code not in ERROR_CODES:
+            # 2. Timing Differential Signal (Socket Hang):
+            # If backend parses chunked TE while frontend uses CL (or vice versa), the backend
+            # hangs waiting for chunk terminator, causing a significant delay vs baseline.
+            if (probe_time >= base_time + 3.0) or (timed_out and base_time < 2.0):
                 smuggling_detected = True
                 evidence_details.append(
-                    "Server returned {} (baseline was {}), indicating header parsing confusion".format(
-                        resp.status_code, baseline.status_code)
+                    "Probe request delayed by {:.2f}s (baseline: {:.2f}s), indicating backend socket hang due to desynchronized header parsing".format(
+                        probe_time, base_time
+                    )
                 )
 
-            if resp.status_code != baseline.status_code:
-                evidence_details.append(
-                    "Status code changed from {} to {}".format(baseline.status_code, resp.status_code)
-                )
-
+            # 3. Follow-up Queue Poisoning Signal (Response Desynchronization):
+            # Send follow-up request to check if the smuggled request payload was processed
             followup = session.get(url)
-            if followup and followup.status_code != baseline.status_code:
-                smuggling_detected = True
-                evidence_details.append(
-                    "Follow-up returned {} instead of {}, suggesting queue poisoning".format(
-                        followup.status_code, baseline.status_code)
-                )
+            if followup and baseline.status_code == 200:
+                # If smuggled request was 'GET /404-smuggled-probe' and follow-up returns 404
+                if followup.status_code == 404 and "GET /404-smuggled-probe" in body:
+                    smuggling_detected = True
+                    evidence_details.append(
+                        "Follow-up request returned 404 Not Found matching smuggled probe URL 'GET /404-smuggled-probe' (baseline was 200 OK), confirming queue desynchronization"
+                    )
 
-            if not (smuggling_detected and evidence_details):
+            if not smuggling_detected or not evidence_details:
                 continue
 
             curl_cmd = _build_curl_smuggle("POST", url, headers, body)
             header_lines = "\n".join("  {}: {}".format(k, v) for k, v in headers.items())
             indicator_lines = "\n".join("  - {}".format(d) for d in evidence_details)
+            resp_status = resp.status_code if resp else "TIMED_OUT"
 
             session.add_finding(Finding(
                 title="HTTP Request Smuggling ({})".format(payload["name"]),
                 severity=Severity.CRITICAL,
                 description=(
                     "The server at '{}' appears vulnerable to HTTP Request Smuggling "
-                    "via {}. {} This allows smuggling a second request inside the first, "
+                    "via {}. {} Empirical differential signals confirmed desynchronization. "
+                    "This allows smuggling a second request inside the first, "
                     "potentially bypassing security controls, poisoning caches, or "
                     "hijacking other users' requests.".format(
                         parsed.netloc, payload["name"], payload["description"])
@@ -124,7 +158,7 @@ def _smuggle_test(session, url, payloads, technique_label):
                     "Body (escaped): {}\nBaseline Status: {}\n"
                     "Smuggle Status: {}\nIndicators:\n{}".format(
                         url, payload["name"], header_lines, repr(body),
-                        baseline.status_code, resp.status_code, indicator_lines)
+                        baseline.status_code, resp_status, indicator_lines)
                 ),
                 remediation=(
                     "1. Reject requests with both Content-Length and Transfer-Encoding.\n"
@@ -142,15 +176,14 @@ def _smuggle_test(session, url, payloads, technique_label):
                 request_method="POST",
                 request_headers=str(headers),
                 request_body=repr(body),
-                response_status=resp.status_code,
+                response_status=resp.status_code if resp else 0,
                 curl_command=curl_cmd,
                 reproduction_steps=(
                     "1. POST to {} with conflicting CL/TE headers.\n"
                     "2. Headers: {}\n"
                     "3. Body (raw): {}\n"
-                    "4. Compare response status with a normal GET.\n"
-                    "5. Follow-up GET to detect queue poisoning.\n"
-                    "6. Run: {}".format(url, headers, repr(body), curl_cmd)
+                    "4. Measure differential response time or follow-up status.\n"
+                    "5. Run: {}".format(url, headers, repr(body), curl_cmd)
                 ),
                 developer_fix=(
                     "Server/Proxy configuration for {}:\n\n"
@@ -167,7 +200,7 @@ def _smuggle_test(session, url, payloads, technique_label):
                     "https://portswigger.net/research/http-desync-attacks-request-smuggling-reborn"
                 ),
                 detection_method=(
-                    "Sent ambiguous CL/TE headers ({}) and detected desync: {}".format(
+                    "Sent ambiguous CL/TE headers ({}) and detected differential signal: {}".format(
                         payload["name"], "; ".join(evidence_details))
                 ),
             ))
@@ -177,10 +210,14 @@ def _smuggle_test(session, url, payloads, technique_label):
             continue
 
 
-def _test_te_obfuscation(session, url):
+def _test_te_obfuscation(session: ScanSession, url: str) -> None:
+    """Test for Transfer-Encoding obfuscation bypasses."""
     parsed = urlparse(url)
+    start_base = time.time()
     baseline = session.get(url)
-    if not baseline:
+    base_time = time.time() - start_base
+
+    if not baseline or baseline.status_code in SAFE_REJECTION_CODES:
         return
 
     for te_headers in TE_OBFUSCATION_HEADERS:
@@ -189,12 +226,31 @@ def _test_te_obfuscation(session, url):
             headers["Content-Length"] = "5"
             body = "0\r\n\r\n"
 
-            resp = session.post(url, headers=headers, data=body.encode("latin-1"))
-            if not resp or resp.status_code == baseline.status_code:
+            start_probe = time.time()
+            resp = session.post(url, headers=headers, data=body.encode("latin-1"), timeout=5.0)
+            probe_time = time.time() - start_probe
+
+            if not resp:
                 continue
 
+            # Safe rejection check: 4xx/5xx rejection of malformed TE is SAFE behavior.
+            if resp.status_code in SAFE_REJECTION_CODES:
+                continue
+
+            # Check for differential timing or desync signal
             te_value = list(te_headers.values())[0]
-            if resp.status_code not in ERROR_CODES:
+            desync_detected = False
+            evidence_details = []
+
+            if probe_time >= base_time + 3.0:
+                desync_detected = True
+                evidence_details.append(
+                    "Obfuscated TE probe caused {:.2f}s delay vs baseline {:.2f}s, suggesting frontend/backend parsing divergence".format(
+                        probe_time, base_time
+                    )
+                )
+
+            if not desync_detected or not evidence_details:
                 continue
 
             curl_cmd = _build_curl_smuggle("POST", url, headers, body)
@@ -202,15 +258,15 @@ def _test_te_obfuscation(session, url):
                 title="HTTP Request Smuggling (TE Obfuscation: {})".format(repr(te_value)),
                 severity=Severity.HIGH,
                 description=(
-                    "The server at '{}' responds differently to obfuscated TE header "
-                    "value ({}). Frontend and backend may parse TE differently, enabling "
-                    "smuggling via a value one layer recognizes and the other ignores.".format(
-                        parsed.netloc, repr(te_value))
+                    "The server at '{}' exhibits differential parsing delay when sent an "
+                    "obfuscated TE header value ({}). Frontend and backend may parse TE differently, "
+                    "enabling request smuggling.".format(parsed.netloc, repr(te_value))
                 ),
                 evidence=(
                     "Target URL: {}\nObfuscated TE Value: {}\nHeaders Sent: {}\n"
-                    "Baseline Status: {}\nObfuscated TE Status: {}".format(
-                        url, repr(te_value), headers, baseline.status_code, resp.status_code)
+                    "Baseline Status: {}\nObfuscated TE Status: {}\nIndicators:\n{}".format(
+                        url, repr(te_value), headers, baseline.status_code, resp.status_code,
+                        "\n".join("  - {}".format(d) for d in evidence_details))
                 ),
                 remediation=(
                     "1. Normalize or reject malformed Transfer-Encoding headers at the frontend.\n"
@@ -231,8 +287,8 @@ def _test_te_obfuscation(session, url):
                 reproduction_steps=(
                     "1. POST to {} with obfuscated TE header.\n"
                     "2. Transfer-Encoding value: {}\n"
-                    "3. Compare response status vs baseline ({}).\n"
-                    "4. Run: {}".format(url, repr(te_value), baseline.status_code, curl_cmd)
+                    "3. Compare response timing vs baseline ({:.2f}s).\n"
+                    "4. Run: {}".format(url, repr(te_value), base_time, curl_cmd)
                 ),
                 developer_fix=(
                     "Server/Proxy configuration for {}:\n\n"
@@ -247,9 +303,8 @@ def _test_te_obfuscation(session, url):
                     "https://portswigger.net/research/http-desync-attacks-request-smuggling-reborn"
                 ),
                 detection_method=(
-                    "Sent obfuscated TE header ({}) and observed status {} vs baseline {}, "
-                    "suggesting inconsistent TE parsing.".format(
-                        repr(te_value), resp.status_code, baseline.status_code)
+                    "Sent obfuscated TE header ({}) and detected differential signal: {}".format(
+                        repr(te_value), "; ".join(evidence_details))
                 ),
             ))
         except (requests.RequestException, OSError, ConnectionError) as e:
@@ -257,7 +312,7 @@ def _test_te_obfuscation(session, url):
             continue
 
 
-def _test_http_version_downgrade(session, url):
+def _test_http_version_downgrade(session: ScanSession, url: str) -> None:
     parsed = urlparse(url)
     try:
         resp = session.get(url)
