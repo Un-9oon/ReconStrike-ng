@@ -20,6 +20,8 @@ class _ColorFormatter(logging.Formatter):
         self.use_color = use_color
 
     def format(self, record: logging.LogRecord) -> str:
+        from scanner.core import _redact_sensitive
+        record.msg = _redact_sensitive(str(record.msg)) if isinstance(record.msg, str) else record.msg
         msg = super().format(record)
         if not self.use_color:
             return msg

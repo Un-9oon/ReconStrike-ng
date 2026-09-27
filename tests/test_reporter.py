@@ -91,6 +91,14 @@ class TestGenerateHtmlReport:
         assert "<head>" in html
         assert "<body>" in html
 
+    def test_report_escapes_xss_in_evidence_and_fields(self, session_with_findings, tmp_path):
+        output = str(tmp_path / "report.html")
+        generate_html_report(session_with_findings, output)
+        with open(output) as f:
+            html_content = f.read()
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html_content
+        assert "<script>alert(1)</script>" not in html_content
+
 
 class TestPrintSummary:
     def test_no_crash_empty_findings(self, empty_session, caplog):

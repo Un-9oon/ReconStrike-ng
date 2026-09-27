@@ -40,3 +40,11 @@ class TestCLI:
         # A target that cannot be reached should cause an error exit
         result = run_cli("-t", "http://256.256.256.256:1", "--modules", "headers", "--timeout", "2", "-q")
         assert result.returncode != 0
+
+    def test_sandbox_script_safety_flags(self):
+        sandbox_path = os.path.join(PROJECT_ROOT, "reconstrike-ng-sandbox.sh")
+        with open(sandbox_path) as f:
+            content = f.read()
+        assert "--cap-drop=ALL" in content
+        assert "--read-only" in content
+        assert "--security-opt=no-new-privileges:true" in content
