@@ -559,5 +559,16 @@ class TestNewConfigDefaults(unittest.TestCase):
         self.assertIn("waf_evasion", summary["methods"])
 
 
+class TestLibraryLevelAuthorization(unittest.TestCase):
+    def test_identity_manager_rejects_mismatched_authorized_target_at_library_level(self):
+        from scanner.identity_manager import ANMConfig, IdentityManager
+        config = ANMConfig(
+            target="http://real-target.com",
+            authorized_target="http://some-other-unrelated-host.com",
+            rotate_mac=True,
+        )
+        mgr = IdentityManager(config)
+        self.assertFalse(mgr._high_impact_authorized)
+
 if __name__ == "__main__":
     unittest.main()

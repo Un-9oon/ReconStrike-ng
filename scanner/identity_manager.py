@@ -106,6 +106,7 @@ class ANMConfig:
     #   - IP rotation via Tor / proxy pool is disabled
     #   - UA rotation remains enabled (cosmetic only, low risk)
     authorized_target: str = ""
+    target: str = ""
 
 
 # WAF evasion header sets -- randomised to defeat header fingerprinting
@@ -399,7 +400,8 @@ class IdentityManager:
         # ── Authorization gate ──────────────────────────────────────────────
         # High-impact rotations require --authorized-target to be set.
         # UA rotation is cosmetic; always allowed.
-        self._high_impact_authorized = bool(config.authorized_target)
+        from scanner.authorization import validate_authorized_target
+        self._high_impact_authorized = validate_authorized_target(config.target, config.authorized_target)
         if not self._high_impact_authorized:
             if config.rotate_mac or config.use_tor or config.proxy_pool_file:
                 logger.warning(self._AUTH_WARNING)
