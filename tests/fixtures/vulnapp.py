@@ -481,9 +481,13 @@ class VulnHandler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         self._html(200, "<html><body><p>DELETE accepted</p></body></html>")
 
+from socketserver import ThreadingMixIn
+
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    pass
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else PORT
-    server = HTTPServer(("127.0.0.1", port), VulnHandler)
+    server = ThreadedHTTPServer(("127.0.0.1", port), VulnHandler)
     print(f"VulnApp listening on http://127.0.0.1:{port}", flush=True)
     server.serve_forever()
