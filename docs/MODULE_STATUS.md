@@ -66,8 +66,6 @@
 | `zero_day` | Zero-Day Heuristics | ✅ CONFIRMED | Multiple param endpoints | N/A | Fuzzer fires on anomaly delta (method confusion on /) |
 | `hpp` | HTTP Parameter Pollution | ✅ CONFIRMED | `GET /xss?q=test&q=hpp` | N/A | Duplicated param handling detected (both values reflected) |
 | `dom_xss` | DOM-Based XSS | ❌ UNVERIFIED | `GET /xss?q=<payload>` | N/A | DOM sinks require JS engine; DAST-only heuristic |
-| `session_security` | Session Security & Cookie Hardening | ⚠️ CONFIRMED-NEGATIVE | Cookie flags checked | N/A | Fixture sets no cookies; correctly reports 0 findings |
-
 ---
 
 ## build_curl() Signature Audit
@@ -139,8 +137,8 @@ Modules that iterate payload × param × category/variation:
 
 | Status | Count | Modules |
 |--------|-------|---------|
-| ✅ CONFIRMED | 22 | sqli, xss, nosql, ldap_injection, idor, cors, jwt, csrf, mass_assignment, oauth_misconfig, open_redirect, prototype_pollution, ssrf, file_upload, cache_poisoning, host_header, http_method, directory, info, graphql, business_logic, headers, misconfig, fingerprint, zero_day, hpp |
-| ⚠️ CONFIRMED-NEGATIVE | 4 | session_security, portscan, cve_check |
-| ❌ UNVERIFIED | 17 | ssti, cmdi, xxe, second_order, lfi, deserialization, race_condition, request_smuggling, websocket_security, ssl, auth, subdomain, subdomain_takeover, dom_xss, session_security (auth), portscan (full), fingerprint (full) |
+| ✅ CONFIRMED | 26 | sqli, xss, nosql, ldap_injection, idor, cors, jwt, csrf, mass_assignment, oauth_misconfig, open_redirect, prototype_pollution, ssrf, file_upload, cache_poisoning, host_header, http_method, directory, info, graphql, business_logic, headers, misconfig, fingerprint, zero_day, hpp |
+| ⚠️ CONFIRMED-NEGATIVE | 3 | session_security, portscan, cve_check |
+| ❌ UNVERIFIED | 14 | ssti, cmdi, xxe, second_order, lfi, deserialization, race_condition, request_smuggling, websocket_security, ssl, auth, subdomain, subdomain_takeover, dom_xss |
 
 **Total: 43 modules**

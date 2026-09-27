@@ -99,7 +99,7 @@ print('No high/critical vulnerabilities found')
         run: |
           python tests/fixtures/vulnapp.py &
           echo $! > /tmp/vulnapp.pid
-          sleep 2
+          for i in {1..30}; do curl -sf http://127.0.0.1:15789/ && break || sleep 0.5; done
           curl -sf http://127.0.0.1:15789/ || { echo "vulnapp failed to start"; exit 1; }
       - name: Run --profile standard (catches crash bugs like idor.py)
         run: |

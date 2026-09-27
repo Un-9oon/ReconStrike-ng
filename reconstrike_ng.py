@@ -573,6 +573,7 @@ def main():
         max_rotations_per_scan=args.anm_max_rotations,
         auto_scrape_proxies=auto_scrape,
         authorized_target=getattr(args, "authorized_target", "") or "",
+        target=target,
     )
 
     # Parse --extra-urls: accept a file path or comma-separated URLs
@@ -606,8 +607,8 @@ def main():
                 "--authorized-target URL to confirm you hold written authorization to scan it."
             )
             sys.exit(1)
-        # Normalize and compare
-        if urlparse(auth_target).netloc != urlparse(target).netloc:
+        from scanner.authorization import validate_authorized_target
+        if not validate_authorized_target(target, auth_target):
             logger.error(
                 "AUTHORIZATION MISMATCH: The --authorized-target (%s) does not match the scan "
                 "target (%s). High-impact rotation is prohibited.", auth_target, target
