@@ -68,7 +68,7 @@ The `integration` CI job starts `tests/fixtures/vulnapp.py` as a subprocess. If 
 
 The README states "Production/Stable" status. The PyPI classifier in `pyproject.toml` has "Beta". The README has not been updated to match.
 
-**Planned fix:** README and classifier alignment in this session.
+**Status: RESOLVED.** README no longer contains this claim as of recent commits; either fixed silently in a prior commit or the original report was inaccurate — closing.
 
 ---
 
