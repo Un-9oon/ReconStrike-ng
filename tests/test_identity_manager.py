@@ -157,6 +157,7 @@ class TestProxyPoolRotation(unittest.TestCase):
             enabled=True,
             proxy_pool=["http://p1:8080", "http://p2:8080", "http://p3:8080"],
             min_rotation_interval=0,
+            target="http://authorized-test.local",
             authorized_target="http://authorized-test.local",
         )
         mgr = IdentityManager(cfg)
@@ -481,6 +482,7 @@ class TestFallbackChain(unittest.TestCase):
         cfg = ANMConfig(
             enabled=True, auto_scrape_proxies=True, dhcp_renewal=True,
             min_rotation_interval=0, cooldown_after_block=0,
+            target="http://authorized-test.local",
             authorized_target="http://authorized-test.local",
         )
         mgr = IdentityManager(cfg)
@@ -512,6 +514,7 @@ class TestCombinedBanScenario(unittest.TestCase):
             network_interface="fake0",
             proxy_pool=["http://p1:8080", "http://p2:8080"],
             fail_threshold=1, min_rotation_interval=0, cooldown_after_block=0,
+            target="http://authorized-test.local",
             authorized_target="http://authorized-test.local",
         )
         mgr = IdentityManager(cfg)
