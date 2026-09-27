@@ -100,6 +100,7 @@ class ANMConfig:
     max_rotations_per_scan: int = 50
     block_threshold: int = 3
     fail_threshold: int = 5
+    stall_rotation_limit: int = 3
     # Gap 6: operator MUST acknowledge authorization for high-impact rotation.
     # Set via --authorized-target on the CLI.  Without this:
     #   - MAC rotation (--rotate-mac) is disabled
@@ -394,6 +395,10 @@ class IdentityManager:
         self._proxy_index = 0
         self._block_counter = 0
         self._fail_counter = 0
+        self._consecutive_stalled_rotations = 0
+        self._has_made_progress_since_last_rotation = False
+        self._is_stalled = False
+        self._was_auto_scraped = False
         self._rotation_history: list[dict] = []
         self._shutting_down = False
 
@@ -504,6 +509,13 @@ class IdentityManager:
         with self._lock:
             self._block_counter = 0
             self._fail_counter = 0
+            self._has_made_progress_since_last_rotation = True
+
+    def record_target_success(self):
+        with self._lock:
+            self._block_counter = 0
+            self._fail_counter = 0
+            self._has_made_progress_since_last_rotation = True
 
     def rotate(self, reason: str = "manual") -> bool:
         with self._lock:
@@ -517,6 +529,50 @@ class IdentityManager:
         if self._state.rotation_count >= self.config.max_rotations_per_scan:
             logger.warning("ANM: Max rotations reached (%d)", self.config.max_rotations_per_scan)
             return False
+
+        if self._is_stalled:
+            self._state.proxy = ""
+            delay = self._apply_exponential_backoff()
+            return True
+
+        if self._state.rotation_count > 0:
+            if self._has_made_progress_since_last_rotation:
+                self._consecutive_stalled_rotations = 0
+            else:
+                self._consecutive_stalled_rotations += 1
+
+        self._has_made_progress_since_last_rotation = False
+
+        if self._consecutive_stalled_rotations >= self.config.stall_rotation_limit:
+            self._is_stalled = True
+            target_name = self.config.target or self.config.authorized_target or "target"
+            if self._was_auto_scraped or not self.config.proxy_pool_file:
+                logger.error(
+                    "ANM ERROR: Identity rotation is not restoring connectivity to target %s. "
+                    "Auto-scraped free proxies are dead or unable to reach target host. "
+                    "Disabling proxy rotation and falling back to direct connection backoff.",
+                    target_name,
+                )
+            else:
+                logger.error(
+                    "ANM ERROR: Identity rotation is not restoring connectivity to target %s; "
+                    "configured proxies/exit nodes cannot reach it. "
+                    "Disabling proxy rotation and falling back to direct connection backoff.",
+                    target_name,
+                )
+            self._state.proxy = ""
+            self.config.proxy_pool = []
+            delay = self._apply_exponential_backoff()
+            self._state.rotation_count += 1
+            self._state.last_rotation = now
+            record = {
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "trigger": trigger,
+                "detail": "stalled_rotation_limit_reached",
+                "actions": ["proxy_disabled_fallback_direct_backoff"],
+            }
+            self._rotation_history.append(record)
+            return True
 
         record = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -592,6 +648,7 @@ class IdentityManager:
             logger.info("ANM: No proxies configured, auto-scraping...")
             scraped = _scrape_free_proxies(max_proxies=20)
             if scraped:
+                self._was_auto_scraped = True
                 self.config.proxy_pool = scraped
                 random.shuffle(self.config.proxy_pool)
                 self._proxy_index = 0

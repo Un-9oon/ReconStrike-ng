@@ -5,7 +5,7 @@ Tests for Host header injection, password-reset poisoning, and web cache
 poisoning via Host header manipulation.
 """
 
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse
 from scanner.core import ScanSession, Finding, Severity
 
 EVIL_HOST = "evil-host-header-test.com"
@@ -107,8 +107,6 @@ def _test_host_header_direct(session: ScanSession, url: str) -> None:
 
 def _test_forwarded_headers(session: ScanSession, url: str) -> None:
     """Test override headers like X-Forwarded-Host for reflection/injection."""
-    parsed = urlparse(url)
-    original_host = parsed.netloc
 
     for header_name in FORWARDED_HEADERS:
         headers = {header_name: EVIL_HOST}

@@ -18,6 +18,8 @@
 | BUG-006 | `scanner/core.py::_safe_read()` | Set `resp._content` instead of `resp.content` for curl_cffi.Response → `resp.text` empty | Changed to `resp.content = b"".join(chunks)` |
 | BUG-007 | `scanner/proxy/server.py` | Hardcoded `verify=False` on upstream requests, ignoring `--no-ssl-verify` | Added `verify_ssl` parameter to `ProxyServer`, passed from config |
 | BUG-008 | `scanner/core.py::_resolve_ip()` | Unbounded/uncached DNS resolution; slow/unresponsive resolver could stall scan | Added 3s timeout via ThreadPoolExecutor + 1-hour in-process TTL cache |
+| BUG-009 | `reconstrike_ng.py` | Target initial reachability check treated 403/429/5xx responses as "unreachable" (`if not resp:`) and exited immediately before ANM could rotate | Fixed check to distinguish `resp is None` from HTTP error status; signals ANM `signal_block()` and continues scan |
+| BUG-010 | `scanner/identity_manager.py` | ANM auto-scraped free proxies looped indefinitely (up to 50 rotations) with zero progress when proxies were dead | Added `stall_rotation_limit` progress tracking to fallback to direct connection backoff when N rotations yield zero target progress |
 
 ---
 

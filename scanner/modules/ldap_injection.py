@@ -244,7 +244,6 @@ def _test_forms(session, form):
     method = form.get("method", "post").lower()
     inputs = form.get("inputs", [])
     source_url = form.get("source_url", action)
-    parsed = urlparse(action)
 
     baseline_data = {}
     for inp in inputs:

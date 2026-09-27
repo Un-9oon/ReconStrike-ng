@@ -48,3 +48,32 @@ class TestCLI:
         assert "--cap-drop=ALL" in content
         assert "--read-only" in content
         assert "--security-opt=no-new-privileges:true" in content
+
+    def test_initial_403_target_does_not_abort_and_triggers_anm(self):
+        import threading
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        from unittest.mock import MagicMock
+
+        class ForbiddenHandler(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+            def do_GET(self):
+                self.send_response(403)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"Forbidden")
+
+        server = HTTPServer(("127.0.0.1", 0), ForbiddenHandler)
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        target_url = f"http://127.0.0.1:{port}"
+        try:
+            result = run_cli("-t", target_url, "--anm", "--rotate-ua", "--authorized-target", target_url, "--modules", "headers", "--depth", "1", "--timeout", "1", timeout=15)
+            # Must NOT exit with "Cannot reach target"
+            assert "Cannot reach target" not in result.stderr
+            assert "Target responded with error status HTTP 403" in result.stdout or "Target responded with error status HTTP 403" in result.stderr or "Target is reachable (HTTP 403)" in result.stdout or "Target is reachable (HTTP 403)" in result.stderr
+        finally:
+            server.shutdown()
+

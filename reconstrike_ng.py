@@ -695,10 +695,20 @@ def main():
 
     if args.target:
         resp = session.get(target)
-        if not resp:
+        if resp is None:
             logger.error("Cannot reach target: %s", target)
             logger.warning("Check the URL and network connectivity.")
             sys.exit(1)
+
+        if resp.status_code in (403, 429) or resp.status_code >= 500:
+            logger.warning("Target responded with error status HTTP %s: %s", resp.status_code, target)
+            if session.identity_manager:
+                rotated = session.identity_manager.signal_block(resp.status_code)
+                if rotated:
+                    session.identity_manager.apply_to_session(session.session)
+                    logger.info("ANM: Identity rotated after initial HTTP %s block.", resp.status_code)
+            else:
+                logger.warning("Target returned an error status. Consider enabling ANM (--anm) for automatic evasion.")
 
         if not args.quiet:
             logger.info("Target is reachable (HTTP %s)", resp.status_code)

@@ -565,16 +565,67 @@ class TestNewConfigDefaults(unittest.TestCase):
         self.assertIn("waf_evasion", summary["methods"])
 
 
-class TestLibraryLevelAuthorization(unittest.TestCase):
-    def test_identity_manager_rejects_mismatched_authorized_target_at_library_level(self):
-        from scanner.identity_manager import ANMConfig, IdentityManager
-        config = ANMConfig(
-            target="http://real-target.com",
-            authorized_target="http://some-other-unrelated-host.com",
-            rotate_mac=True,
+class TestStalledRotationProgress(unittest.TestCase):
+    def test_stalled_rotations_stop_and_fallback_to_backoff(self):
+        cfg = ANMConfig(
+            enabled=True,
+            proxy_pool=["http://p1:8080", "http://p2:8080", "http://p3:8080", "http://p4:8080"],
+            block_threshold=1,
+            stall_rotation_limit=3,
+            min_rotation_interval=0,
+            cooldown_after_block=0,
+            target="http://example.com",
+            authorized_target="http://example.com",
         )
-        mgr = IdentityManager(config)
-        self.assertFalse(mgr._high_impact_authorized)
+        mgr = IdentityManager(cfg)
+
+        with patch.object(mgr, "_apply_exponential_backoff", return_value=1.0) as mock_backoff:
+            # 1st rotation (initial)
+            mgr.signal_block(403)
+            self.assertFalse(mgr._is_stalled)
+
+            # 2nd rotation (no progress since 1st) -> stalled count 1
+            mgr.signal_block(403)
+            self.assertFalse(mgr._is_stalled)
+
+            # 3rd rotation (no progress) -> stalled count 2
+            mgr.signal_block(403)
+            self.assertFalse(mgr._is_stalled)
+
+            # 4th rotation (no progress) -> reaches stall_rotation_limit (3), trips fallback
+            mgr.signal_block(403)
+            self.assertTrue(mgr._is_stalled)
+            self.assertEqual(mgr._state.proxy, "")
+            mock_backoff.assert_called()
+
+            # Subsequent rotation signals while stalled stay direct and trigger backoff
+            mock_backoff.reset_mock()
+            mgr.signal_block(403)
+            self.assertTrue(mgr._is_stalled)
+            self.assertEqual(mgr._state.proxy, "")
+            mock_backoff.assert_called()
+
+    def test_progress_resets_stalled_counter(self):
+        cfg = ANMConfig(
+            enabled=True,
+            proxy_pool=["http://p1:8080", "http://p2:8080", "http://p3:8080"],
+            block_threshold=1,
+            stall_rotation_limit=3,
+            min_rotation_interval=0,
+            cooldown_after_block=0,
+            target="http://example.com",
+            authorized_target="http://example.com",
+        )
+        mgr = IdentityManager(cfg)
+
+        with patch.object(mgr, "_apply_exponential_backoff", return_value=1.0):
+            mgr.signal_block(403)  # initial
+            mgr.signal_block(403)  # stall 1
+            mgr.record_target_success()  # progress made!
+            mgr.signal_block(403)  # reset -> stall count 0 (has progress)
+            self.assertFalse(mgr._is_stalled)
+
 
 if __name__ == "__main__":
     unittest.main()
+

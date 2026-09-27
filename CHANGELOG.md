@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Features
 - 43 scan modules covering OWASP Top 10, PCI DSS, and advanced attack categories
+- Fixed target initial reachability check so HTTP 403/429/5xx responses trigger ANM rotation instead of aborting the scan
+- Fixed ANM identity rotation loop by adding stalled rotation detection and falling back to direct connection backoff when proxies cannot reach target
 - Concurrent multi-threaded crawler with depth control and URL/form deduplication
 - Adaptive Network Masking (ANM) — runtime IP/MAC/UA rotation via Tor, proxy pools, DHCP, and MAC spoofing
 - Stealth mode with full browser profile emulation and human-like timing patterns

@@ -431,7 +431,6 @@ def _test_forms(session, form):
     method = form.get("method", "post").lower()
     inputs = form.get("inputs", [])
     source_url = form.get("source_url", action)
-    parsed = urlparse(action)
 
     rp_lower = {rp.lower() for rp in REDIRECT_PARAMS}
     redirect_fields = [inp for inp in inputs if inp.get("name", "").lower() in rp_lower and inp.get("name")]

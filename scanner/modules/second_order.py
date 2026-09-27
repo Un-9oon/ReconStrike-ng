@@ -163,10 +163,8 @@ def _check_for_reflections(session, tracking):
 
             payload = entry["payload"]
             injection_type = entry["injection_type"]
-            desc = entry["description"]
             param = entry["parameter"]
             form_action = entry["form_action"]
-            source_url = entry["source_url"]
 
             confirmed = False
             reflected_raw = False
