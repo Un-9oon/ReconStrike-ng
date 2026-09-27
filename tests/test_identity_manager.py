@@ -105,6 +105,7 @@ class TestIdentityManagerInit(unittest.TestCase):
         try:
             cfg = ANMConfig(
                 enabled=True, proxy_pool_file=f.name,
+                target="http://authorized-test.local",
                 authorized_target="http://authorized-test.local",
             )
             mgr = IdentityManager(cfg)
@@ -118,6 +119,7 @@ class TestIdentityManagerInit(unittest.TestCase):
     def test_proxy_pool_missing_file(self):
         cfg = ANMConfig(
             enabled=True, proxy_pool_file="/nonexistent/proxy_list.txt",
+            target="http://authorized-test.local",
             authorized_target="http://authorized-test.local",
         )
         mgr = IdentityManager(cfg)
@@ -451,6 +453,7 @@ class TestFallbackChain(unittest.TestCase):
             enabled=True, use_tor=True, rotate_ua=True,
             proxy_pool=["http://p1:8080"],
             min_rotation_interval=0, cooldown_after_block=0,
+            target="http://authorized-test.local",
             authorized_target="http://authorized-test.local",
         )
         mgr = IdentityManager(cfg)
