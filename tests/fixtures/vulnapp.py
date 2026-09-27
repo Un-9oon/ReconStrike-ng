@@ -484,7 +484,9 @@ class VulnHandler(BaseHTTPRequestHandler):
 from socketserver import ThreadingMixIn
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
-    pass
+    daemon_threads = True       # don't block shutdown on in-flight handlers
+    request_queue_size = 128    # widen OS accept backlog for concurrent scanner load
+    allow_reuse_address = True  # avoid TIME_WAIT bind failure on restart
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else PORT

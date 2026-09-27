@@ -497,6 +497,8 @@ class ScanSession:
             time.sleep(sleep_time)
 
     def _track_response_status(self, resp: Optional[requests.Response], exc: Optional[Exception] = None):
+        if isinstance(exc, (requests.exceptions.InvalidURL, requests.exceptions.InvalidSchema, ValueError)):
+            return
         with self._lock:
             if exc is not None or resp is None:
                 self._consecutive_fails += 1
