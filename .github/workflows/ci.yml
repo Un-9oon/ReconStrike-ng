@@ -41,11 +41,13 @@ jobs:
         run: pip install pip-audit safety
       - name: Run pip-audit on requirements-lock.txt
         run: |
-          pip-audit -r requirements-lock.txt --desc --format json --output /tmp/pip-audit.json || true
+          # Strip hash lines — pip-audit can't handle --require-hashes format
+          grep -v '^\s*--hash' requirements-lock.txt | grep -v '^\s*\\' > /tmp/reqs-plain.txt || true
+          pip-audit -r /tmp/reqs-plain.txt --desc --format json --output /tmp/pip-audit.json || true
           cat /tmp/pip-audit.json
       - name: Run safety check
         run: |
-          safety check -r requirements-lock.txt --json --output /tmp/safety.json || true
+          safety check -r /tmp/reqs-plain.txt --json --output /tmp/safety.json || true
           cat /tmp/safety.json
       - name: Fail on high/critical vulnerabilities
         run: |
