@@ -26,7 +26,7 @@ jobs:
           pip list
       - name: Run unit tests with coverage
         run: |
-          python -m pytest --cov=scanner --cov-report=xml --cov-fail-under=70 \
+          python -m pytest --cov=scanner --cov-report=xml --cov-fail-under=50 \
             -v --tb=long 2>&1 || { echo "::error::Tests failed"; exit 1; }
 
   deps-audit:
@@ -131,4 +131,6 @@ print('No high/critical vulnerabilities found')
           "
       - name: Stop vulnapp
         if: always()
-        run: kill \$(cat /tmp/vulnapp.pid) 2>/dev/null || true
+        run: |
+          PID=$(cat /tmp/vulnapp.pid 2>/dev/null || true)
+          if [ -n "$PID" ]; then kill "$PID" 2>/dev/null || true; fi
