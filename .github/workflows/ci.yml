@@ -49,31 +49,26 @@ jobs:
           cat /tmp/safety.json
       - name: Fail on high/critical vulnerabilities
         run: |
-          python -c "
-import json
-import sys
-
-# Check pip-audit results
-with open('/tmp/pip-audit.json') as f:
-    audit = json.load(f)
-high_critical = [v for v in audit.get('vulnerabilities', []) if v.get('severity', '').upper() in ('HIGH', 'CRITICAL')]
-if high_critical:
-    print('HIGH/CRITICAL vulnerabilities found in pip-audit:')
-    for v in high_critical:
-        print(f\"  {v['package']} {v['installed_version']}: {v['vulnerability_id']} ({v['severity']})\")
-    sys.exit(1)
-
-# Check safety results
-with open('/tmp/safety.json') as f:
-    safety = json.load(f)
-if safety:
-    print('Vulnerabilities found in safety:')
-    for v in safety:
-        print(f\"  {v.get('package', 'unknown')}: {v.get('vulnerability_id', 'unknown')}\")
-    sys.exit(1)
-
-print('No high/critical vulnerabilities found')
-"
+          python - <<'PYEOF'
+          import json, sys
+          with open('/tmp/pip-audit.json') as f:
+              audit = json.load(f)
+          high_critical = [v for v in audit.get('vulnerabilities', [])
+                           if v.get('severity', '').upper() in ('HIGH', 'CRITICAL')]
+          if high_critical:
+              print('HIGH/CRITICAL vulnerabilities found in pip-audit:')
+              for v in high_critical:
+                  print(f"  {v['package']} {v['installed_version']}: {v['vulnerability_id']} ({v['severity']})")
+              sys.exit(1)
+          with open('/tmp/safety.json') as f:
+              safety = json.load(f)
+          if safety:
+              print('Vulnerabilities found in safety:')
+              for v in safety:
+                  print(f"  {v.get('package', 'unknown')}: {v.get('vulnerability_id', 'unknown')}")
+              sys.exit(1)
+          print('No high/critical vulnerabilities found')
+          PYEOF
 
   lint:
     runs-on: ubuntu-latest
@@ -121,14 +116,14 @@ print('No high/critical vulnerabilities found')
           fi
       - name: Verify JSON output parseable
         run: |
-          python -c "
+          python - <<'PYEOF'
           import json
           for path in ['/tmp/scan-standard.json', '/tmp/scan-owasp.json']:
               d = json.load(open(path))
               assert 'findings' in d, f'missing findings key in {path}'
               assert 'urls_scanned' in d, f'missing urls_scanned key in {path}'
           print('JSON output OK')
-          "
+          PYEOF
       - name: Stop vulnapp
         if: always()
         run: |
