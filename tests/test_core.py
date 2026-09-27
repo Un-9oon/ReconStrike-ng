@@ -384,3 +384,21 @@ class TestSanitizePath:
             assert not any("no write permission" in record.message.lower() for record in caplog.records)
         finally:
             readonly_dir.chmod(0o755)
+
+
+class TestTrackResponseStatus:
+    def test_non_target_probe_failures_ignored(self):
+        config = ScanConfig(target="http://example.com")
+        session = ScanSession(config)
+        for _ in range(10):
+            session._track_response_status(None, exc=Exception("OOB timeout"), url="http://169.254.169.254/meta")
+        assert session._consecutive_fails == 0
+
+    def test_target_host_failures_increment_counter(self):
+        config = ScanConfig(target="http://example.com")
+        session = ScanSession(config)
+        for _ in range(5):
+            session._track_response_status(None, exc=Exception("Connection refused"), url="http://example.com/page")
+        assert session._consecutive_fails == 5
+        assert session._warned_fail is True
+

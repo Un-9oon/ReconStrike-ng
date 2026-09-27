@@ -496,8 +496,23 @@ class ScanSession:
         if sleep_time > 0:
             time.sleep(sleep_time)
 
-    def _track_response_status(self, resp: Optional[requests.Response], exc: Optional[Exception] = None):
+    def _is_target_host(self, url: Optional[str]) -> bool:
+        if not url:
+            return True
+        try:
+            target_netloc = urlparse(self.config.target).netloc
+            req_netloc = urlparse(url).netloc
+            if req_netloc and req_netloc != target_netloc:
+                return False
+        except Exception:
+            pass
+        return True
+
+    def _track_response_status(self, resp: Optional[requests.Response], exc: Optional[Exception] = None, url: Optional[str] = None):
         if isinstance(exc, (requests.exceptions.InvalidURL, requests.exceptions.InvalidSchema, ValueError)):
+            return
+        check_url = url or (resp.url if resp else None)
+        if check_url and not self._is_target_host(check_url):
             return
         with self._lock:
             if exc is not None or resp is None:
@@ -553,21 +568,22 @@ class ScanSession:
             return False
         return True
 
-    def _safe_read(self, resp: requests.Response) -> Optional[requests.Response]:
+    def _safe_read(self, resp: requests.Response, url: Optional[str] = None) -> Optional[requests.Response]:
+        target_url = url or (resp.url if resp else None)
         if resp is None:
-            self._track_response_status(None)
+            self._track_response_status(None, url=target_url)
             return None
 
         if resp.history and _check_ssrf(resp.url, self.config.target):
             resp.close()
-            self._track_response_status(None)
+            self._track_response_status(None, url=target_url)
             return None
 
         if resp.headers.get("Content-Length"):
             try:
                 if int(resp.headers["Content-Length"]) > MAX_RESPONSE_SIZE:
                     resp.close()
-                    self._track_response_status(None)
+                    self._track_response_status(None, url=target_url)
                     return None
             except ValueError:
                 pass
@@ -579,15 +595,15 @@ class ScanSession:
                 total += len(chunk)
                 if total > MAX_RESPONSE_SIZE:
                     resp.close()
-                    self._track_response_status(None)
+                    self._track_response_status(None, url=target_url)
                     return None
                 chunks.append(chunk)
             resp.content = b"".join(chunks)
         except (requests.RequestException, OSError, ValueError) as e:
-            self._track_response_status(None, exc=e)
+            self._track_response_status(None, exc=e, url=target_url)
             return None
 
-        self._track_response_status(resp)
+        self._track_response_status(resp, url=target_url)
         return resp
 
     def get(self, url: str, **kwargs) -> Optional[requests.Response]:
@@ -598,9 +614,9 @@ class ScanSession:
             kwargs.setdefault("timeout", self.config.timeout)
             kwargs.setdefault("allow_redirects", self.config.follow_redirects)
             kwargs.setdefault("stream", True)
-            return self._safe_read(self.session.get(url, **kwargs))
+            return self._safe_read(self.session.get(url, **kwargs), url=url)
         except requests.RequestException as e:
-            self._track_response_status(None, exc=e)
+            self._track_response_status(None, exc=e, url=url)
             return None
 
     def post(self, url: str, **kwargs) -> Optional[requests.Response]:
@@ -610,17 +626,17 @@ class ScanSession:
             self._rate_limit()
             kwargs.setdefault("timeout", self.config.timeout)
             kwargs.setdefault("stream", True)
-            return self._safe_read(self.session.post(url, **kwargs))
+            return self._safe_read(self.session.post(url, **kwargs), url=url)
         except requests.RequestException as e:
-            self._track_response_status(None, exc=e)
+            self._track_response_status(None, exc=e, url=url)
             return None
 
     def head(self, url: str, **kwargs) -> Optional[requests.Response]:
         try:
             kwargs.setdefault("timeout", self.config.timeout)
             resp = self.session.head(url, **kwargs)
-            self._track_response_status(resp)
+            self._track_response_status(resp, url=url)
             return resp
         except requests.RequestException as e:
-            self._track_response_status(None, exc=e)
+            self._track_response_status(None, exc=e, url=url)
             return None
