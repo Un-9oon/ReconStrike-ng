@@ -353,6 +353,7 @@ class TestSanitizePath:
         assert any("dangerous system location" in record.message.lower() for record in caplog.records)
         assert any("redirected" in record.message.lower() for record in caplog.records)
 
+    @pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root bypasses permission bits")
     def test_no_write_permission_fallbacks_to_cwd(self, tmp_path, caplog):
         """Paths without write permission should fallback to CWD with warning."""
         import logging
@@ -367,4 +368,19 @@ class TestSanitizePath:
             assert any("no write permission" in record.message.lower() for record in caplog.records)
         finally:
             # Restore permissions for cleanup
+            readonly_dir.chmod(0o755)
+
+    @pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() != 0, reason="requires root")
+    def test_root_ignores_readonly_and_writes(self, tmp_path, caplog):
+        """Root can write to 0o555 directories, so no fallback should occur."""
+        import logging
+        caplog.set_level(logging.WARNING)
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir(mode=0o555)
+        try:
+            target = str(readonly_dir / "output.json")
+            result = _sanitize_path(target)
+            assert result == target
+            assert not any("no write permission" in record.message.lower() for record in caplog.records)
+        finally:
             readonly_dir.chmod(0o755)
