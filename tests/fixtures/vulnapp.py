@@ -64,6 +64,7 @@ import sys
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import urllib.parse
 from urllib.parse import urlparse, parse_qs, unquote_plus
 import html as html_module
 
@@ -475,7 +476,7 @@ class VulnHandler(BaseHTTPRequestHandler):
             for part in body.split("&"):
                 if "=" in part:
                     k, v = part.split("=", 1)
-                    pairs[k] = urllib.parse.unquote_plus(v)
+                    pairs[k] = unquote_plus(v)
             user = pairs.get("username", "")
             pwd = pairs.get("password", "")
             if user in ("admin", "root") and pwd in ("admin", "password", "123456", "admin123", "root"):
