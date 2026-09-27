@@ -283,3 +283,39 @@ class TestFullProfileSmoke:
             "The following modules crashed with TypeError (likely a build_curl API mismatch):\n"
             + "\n".join(failures)
         )
+
+
+class TestSubdomainModules:
+    """Unit test subdomain and subdomain_takeover modules with mocked DNS."""
+
+    def test_subdomain_enumeration(self, scan_session):
+        import socket
+        from unittest.mock import patch
+        from scanner.modules.subdomain import run
+
+        def mock_gethostbyname(fqdn):
+            if fqdn == "admin.example.com":
+                return "192.168.1.10"
+            raise socket.gaierror()
+
+        scan_session.config.target = "http://example.com"
+        with patch("socket.gethostbyname", side_effect=mock_gethostbyname):
+            run(scan_session)
+
+        titles = [f.title for f in scan_session.findings]
+        assert any("Subdomain" in t for t in titles)
+
+    def test_subdomain_takeover_logic(self, scan_session):
+        import socket
+        from unittest.mock import patch
+        from scanner.modules.subdomain_takeover import run
+
+        def mock_gethostbyname(fqdn):
+            if fqdn == "dev.example.com":
+                return "192.168.1.20"
+            raise socket.gaierror()
+
+        scan_session.config.target = "http://example.com"
+        with patch("socket.gethostbyname", side_effect=mock_gethostbyname):
+            run(scan_session)
+

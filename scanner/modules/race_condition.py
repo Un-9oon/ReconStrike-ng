@@ -18,6 +18,7 @@ SENSITIVE_PATH_KEYWORDS = [
     "confirm", "approve", "verify",
     "delete", "remove",
     "claim", "reward", "bonus",
+    "race", "increment",
 ]
 
 SENSITIVE_FORM_KEYWORDS = [

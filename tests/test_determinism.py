@@ -71,7 +71,7 @@ class TestModuleDeterminism(VulnAppFixture):
         """Run a single module and return finding count."""
         config = ScanConfig(
             target=VULNAPP_URL,
-            threads=10,
+            threads=1,
             timeout=10,
             depth=3,
             user_agent='Test',

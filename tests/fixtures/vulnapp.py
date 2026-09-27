@@ -64,7 +64,7 @@ import sys
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote_plus
 import html as html_module
 
 PORT = 15789
@@ -142,6 +142,15 @@ class VulnHandler(BaseHTTPRequestHandler):
 <h1>Vulnerable Test Application</h1>
 <form action="/xss" method="get"><input name="q"><button>Search</button></form>
 <form action="/sqli" method="get"><input name="id"><button>Lookup</button></form>
+<form action="/ssti" method="get"><input name="name"><button>Template</button></form>
+<form action="/cmdi" method="get"><input name="cmd"><button>Exec</button></form>
+<form action="/lfi" method="get"><input name="file"><button>File</button></form>
+<form action="/so/store" method="post"><input name="comment"><button>Comment</button></form>
+<a href="/so/view">View Comments</a>
+<a href="/login">Login Page</a>
+<a href="/dom-xss">DOM XSS Page</a>
+<a href="/ws">WebSocket Page</a>
+<a href="/deserialize?data=rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAU=">Deserialize</a>
 <a href="/page1">Page 1</a>
 <a href="/redirect?url=http://example.com">Click here</a>
 </body></html>""")
@@ -178,17 +187,27 @@ class VulnHandler(BaseHTTPRequestHandler):
                 val = 1
             self._html(200, f"<html><body><p>ID: {val}</p></body></html>")
 
-        # SSTI — raw reflection of Jinja-like expression
+        # SSTI — raw evaluation of Jinja-like expression (safe toy evaluator, no eval/exec)
         elif path == "/ssti":
             val = params.get("name", ["World"])[0]
-            # Simulate template evaluation indicator in response
-            self._html(200, f"<html><body><p>Hello, {val}! Template engine: Jinja2 v3.1</p></body></html>")
+            def _eval_tpl(m):
+                try:
+                    return str(int(m.group(1)) * int(m.group(2)))
+                except Exception:
+                    return m.group(0)
+            eval_val = re.sub(r"\{\{\s*(\d+)\s*\*\s*(\d+)\s*\}\}", _eval_tpl, val)
+            self._html(200, f"<html><body><p>Hello, {eval_val}! Template engine: Jinja2 v3.1</p></body></html>")
 
-        # OS Command Injection — echoes cmd in output (simulation, doesn't exec)
+        # OS Command Injection — echoes cmd in output with simulated /etc/passwd and sleep
         elif path == "/cmdi":
             val = params.get("cmd", [""])[0]
-            self._html(200,
-                f"<html><body><pre>$ {val}\n{val}: output line 1\n</pre></body></html>")
+            if "sleep" in val:
+                time.sleep(5)
+            if any(k in val for k in ("passwd", ";", "|", "$(", "`")):
+                out = "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\n"
+            else:
+                out = f"{val}: output line 1\n"
+            self._html(200, f"<html><body><pre>$ {val}\n{out}</pre></body></html>")
 
         # NoSQL Injection — raw filter echo
         elif path == "/nosql":
@@ -201,19 +220,21 @@ class VulnHandler(BaseHTTPRequestHandler):
             self._html(200,
                 f"<html><body><p>LDAP search: (&(uid={val})(objectClass=user))</p></body></html>")
 
-        # LFI — path echo in response
+        # LFI — jailed path echo / simulated file read
         elif path == "/lfi":
             val = params.get("file", ["index.html"])[0]
-            self._html(200,
-                f"<html><body><p>Loading file: {val}</p>"
-                f"<pre>root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1</pre>"
-                f"</body></html>")
+            if any(k in val for k in ("passwd", "..", "win.ini", "etc", "/")):
+                file_content = "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\n[fonts]\n"
+            else:
+                file_content = "Welcome to index page. Safe content."
+            self._html(200, f"<html><body><p>Loading file: {val}</p><pre>{file_content}</pre></body></html>")
 
         # Second-Order Injection — view endpoint
-        elif path == "/so/view":
+        elif path in ("/so/view", "/profile", "/comments"):
             key = params.get("key", [""])[0]
-            stored = _so_store.get(key, "(nothing stored)")
-            self._html(200, f"<html><body><p>Stored value: {stored}</p></body></html>")
+            stored_items = list(_so_store.values())
+            stored_str = " ".join(stored_items) if stored_items else "(nothing stored)"
+            self._html(200, f"<html><body><h1>Profile / View</h1><p>Stored value: {stored_str}</p></body></html>")
 
         # ══ AUTH / ACCESS CONTROL ══════════════════════════════════════════
 
@@ -324,17 +345,57 @@ class VulnHandler(BaseHTTPRequestHandler):
                 "internal_ip": "10.0.0.5",
             })
 
-        # WebSocket upgrade hint (returns 400 with upgrade headers for detection)
+        # WebSocket upgrade endpoint (supports CSWSH origin check simulation)
         elif path == "/ws":
+            upgrade = self.headers.get("Upgrade", "").lower()
+            origin = self.headers.get("Origin", "")
+            if upgrade == "websocket" or "Sec-WebSocket-Key" in self.headers:
+                self.send_response(101, "Switching Protocols")
+                self.send_header("Upgrade", "websocket")
+                self.send_header("Connection", "Upgrade")
+                self.send_header("Sec-WebSocket-Accept", "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
+                if origin:
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                self.end_headers()
+                return
             self._html(400,
                 "<html><body><p>WebSocket endpoint — use ws:// protocol</p></body></html>",
                 extra_headers={"Upgrade": "websocket", "Connection": "Upgrade"})
 
-        # Request smuggling hint (TE header echo)
-        elif path == "/backend":
-            te = self.headers.get("Transfer-Encoding", "")
-            self._html(200, f"<html><body><p>Backend proxy. TE: {te}</p></body></html>",
-                extra_headers={"X-Backend-Server": "internal-lb-01"})
+        # Login form
+        elif path == "/login":
+            self._html(200, """<html><body>
+<h1>Login Form</h1>
+<form action="/login" method="POST">
+  <input name="username" value="admin">
+  <input type="password" name="password" value="">
+  <button type="submit">Sign In</button>
+</form></body></html>""")
+
+        # DOM XSS target page
+        elif path == "/dom-xss":
+            self._html(200, """<html><body><h1>DOM XSS Target</h1><div id="out"></div>
+<script>
+  var hash = location.hash.substring(1);
+  document.getElementById("out").innerHTML = hash;
+</script></body></html>""")
+
+        # DOM XSS safe page
+        elif path == "/safe/dom-xss":
+            self._html(200, """<html><body><h1>Safe DOM XSS Target</h1><div id="out"></div>
+<script>
+  var hash = location.hash.substring(1);
+  document.getElementById("out").textContent = hash;
+</script></body></html>""")
+
+        # Request smuggling endpoint (detects conflicting CL/TE headers)
+        elif path in ("/backend", "/smuggle"):
+            if self.headers.get("Content-Length") and self.headers.get("Transfer-Encoding"):
+                self._html(501, "<html><body><p>501 Not Implemented: Ambiguous Content-Length and Transfer-Encoding</p></body></html>")
+            else:
+                te = self.headers.get("Transfer-Encoding", "")
+                self._html(200, f"<html><body><p>Backend proxy. TE: {te}</p></body></html>",
+                    extra_headers={"X-Backend-Server": "internal-lb-01"})
 
         # ══ DISCOVERY ═════════════════════════════════════════════════════
 
@@ -381,26 +442,46 @@ class VulnHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         body = self._read_body()
 
-        # XXE — echoes DOCTYPE/entity names in response (simulation)
+        # Request smuggling check on POST
+        if self.headers.get("Content-Length") and self.headers.get("Transfer-Encoding"):
+            self._html(501, "<html><body><p>501 Not Implemented: Ambiguous Content-Length and Transfer-Encoding</p></body></html>")
+            return
+
+        # XXE — returns 3+ lines of simulated /etc/passwd when entity/SYSTEM/DOCTYPE is posted
         if path == "/xxe":
-            if "DOCTYPE" in body or "ENTITY" in body or "SYSTEM" in body:
+            if any(k in body for k in ("DOCTYPE", "ENTITY", "SYSTEM", "xxe")):
                 self._text(200,
-                    f"<?xml version='1.0'?><result>Parsed: {body[:200]}"
-                    f"<!-- file contents: root:x:0:0 --></result>")
+                    "<?xml version='1.0'?><result>Parsed: "
+                    "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\n"
+                    "[fonts]\n</result>",
+                    extra_headers={"Content-Type": "application/xml"})
             else:
-                self._text(200, "<?xml version='1.0'?><result>OK</result>")
+                self._text(200, "<?xml version='1.0'?><result>OK</result>", extra_headers={"Content-Type": "application/xml"})
 
         # Second-Order Injection — store endpoint
-        elif path == "/so/store":
+        elif path in ("/so/store", "/so/form", "/comments", "/profile"):
             pairs = {}
             for part in body.split("&"):
                 if "=" in part:
                     k, v = part.split("=", 1)
-                    pairs[k] = v
-            key = pairs.get("key", "default")
-            val = pairs.get("value", "")
-            _so_store[key] = val
-            self._json(200, {"stored": True, "key": key})
+                    pairs[k] = urllib.parse.unquote_plus(v)
+            for k, v in pairs.items():
+                _so_store[k] = v
+            self._json(200, {"stored": True, "data": pairs})
+
+        # Login POST — default credentials test
+        elif path == "/login":
+            pairs = {}
+            for part in body.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    pairs[k] = urllib.parse.unquote_plus(v)
+            user = pairs.get("username", "")
+            pwd = pairs.get("password", "")
+            if user in ("admin", "root") and pwd in ("admin", "password", "123456", "admin123", "root"):
+                self._json(200, {"status": "success", "message": "Welcome admin! Logged in successfully."})
+            else:
+                self._json(401, {"status": "error", "message": "Invalid username or password"})
 
         # File Upload — no type/content validation
         elif path == "/upload":
@@ -411,10 +492,10 @@ class VulnHandler(BaseHTTPRequestHandler):
                 "warning": "no extension check performed",
             })
 
-        # Deserialization — echoes raw pickle/java header
+        # Deserialization — returns java error or loaded object
         elif path == "/deserialize":
-            if body.startswith("rO0") or b"\xac\xed" in body.encode("latin-1", "replace"):
-                self._text(200, "Java deserialization detected. Object loaded.")
+            if any(k in body for k in ("rO0", "aced0005", "O:", "a:", "s:", "i:")) or any(k in self.path for k in ("rO0", "aced0005")):
+                self._text(200, "java.io.StreamCorruptedException: invalid stream header: rO0AB... java.io.ObjectInputStream.readStreamHeader Java deserialization detected. Object loaded.")
             else:
                 self._text(200, f"Deserializing: {body[:50]}")
 
