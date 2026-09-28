@@ -110,8 +110,8 @@ def run(session: ScanSession) -> None:
             detected_tech.add(label.format(groups[0]) if groups else label)
 
     for cookie_name, tech in TECH_SIGNATURES["cookies"].items():
-        for cookie in resp.cookies:
-            if cookie_name.lower() in cookie.name.lower():
+        for name, _value in resp.cookies.items():
+            if cookie_name.lower() in name.lower():
                 detected_tech.add(tech)
 
     if detected_tech:
@@ -182,8 +182,8 @@ def run(session: ScanSession) -> None:
 
         if not found:
             for cookie_pattern in waf["cookies"]:
-                for cookie in resp.cookies:
-                    if cookie_pattern.lower() in cookie.name.lower():
+                for name, _value in resp.cookies.items():
+                    if cookie_pattern.lower() in name.lower():
                         found = True
                         break
                 if found:
