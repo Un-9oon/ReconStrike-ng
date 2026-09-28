@@ -598,12 +598,12 @@ class TestStalledRotationProgress(unittest.TestCase):
             self.assertEqual(mgr._state.proxy, "")
             mock_backoff.assert_called()
 
-            # Subsequent rotation signals while stalled stay direct and trigger backoff
+            # Subsequent rotation signals while stalled stay direct and trigger flat delay, not exponential backoff
             mock_backoff.reset_mock()
             mgr.signal_block(403)
             self.assertTrue(mgr._is_stalled)
             self.assertEqual(mgr._state.proxy, "")
-            mock_backoff.assert_called()
+            mock_backoff.assert_not_called()
 
     def test_progress_resets_stalled_counter(self):
         cfg = ANMConfig(
