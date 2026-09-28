@@ -70,7 +70,7 @@ class TestCLI:
 
         target_url = f"http://127.0.0.1:{port}"
         try:
-            result = run_cli("-t", target_url, "--anm", "--rotate-ua", "--authorized-target", target_url, "--modules", "headers", "--depth", "1", "--timeout", "1", timeout=15)
+            result = run_cli("-t", target_url, "--anm", "--rotate-ua", "--authorized-target", target_url, "--modules", "headers", "--depth", "1", "--timeout", "1", timeout=30)
             # Must NOT exit with "Cannot reach target"
             assert "Cannot reach target" not in result.stderr
             assert "Target responded with error status HTTP 403" in result.stdout or "Target responded with error status HTTP 403" in result.stderr or "Target is reachable (HTTP 403)" in result.stdout or "Target is reachable (HTTP 403)" in result.stderr

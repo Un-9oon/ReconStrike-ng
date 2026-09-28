@@ -47,10 +47,30 @@ def run(session: ScanSession) -> None:
         resp = session.get(session.config.target)
         has_samesite = False
         if resp:
-            for cookie in resp.cookies:
-                attr = cookie.get_nonstandard_attr("SameSite") or ""
-                if attr.lower() in ("strict", "lax"):
-                    has_samesite = True
+            # has_nonstandard_attr/get_nonstandard_attr is unreliable in curl_cffi.
+            # Parse the raw Set-Cookie header for accurate SameSite detection.
+            raw_cookies = []
+            if hasattr(resp.headers, "get_list"):
+                raw_cookies = resp.headers.get_list("set-cookie")
+            elif hasattr(resp.headers, "getlist"):
+                raw_cookies = resp.headers.getlist("set-cookie")
+            else:
+                combined = resp.headers.get("set-cookie", "")
+                if combined:
+                    raw_cookies = [combined]
+
+            for raw in raw_cookies:
+                parts_lower = {p.strip().lower().split("=")[0] for p in raw.split(";")}
+                if "samesite" in parts_lower:
+                    # Check the value is strict or lax (not none)
+                    for part in raw.split(";"):
+                        kv = part.strip().lower()
+                        if kv.startswith("samesite="):
+                            val = kv.split("=", 1)[1].strip()
+                            if val in ("strict", "lax"):
+                                has_samesite = True
+                                break
+                if has_samesite:
                     break
 
         if has_samesite:

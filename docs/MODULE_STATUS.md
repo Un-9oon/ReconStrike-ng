@@ -56,7 +56,7 @@
 | `headers` | Security Headers | ✅ CONFIRMED | Any endpoint (missing CSP etc.) | N/A | Absence of HSTS, X-Frame-Options, CSP, etc. |
 | `ssl` | SSL/TLS Config | ✅ CONFIRMED | HTTP target | N/A | Flags target not using HTTPS (CWE-319) |
 | `auth` | Authentication Security | ✅ CONFIRMED | `POST /login` (weak creds, default pass) | N/A | Form detection & default credential login verified |
-| `session_security` | Session Security | ⚠️ CONFIRMED-NEGATIVE | Cookie flags checked | N/A | Fixture sets no cookies; correctly reports 0 findings |
+| `session_security` | Session Security | ✅ CONFIRMED | Cookie flags checked | N/A | Fixture in test_cookie_regression.py sets session cookies; flags evaluated properly |
 | `misconfig` | Security Misconfigurations | ✅ CONFIRMED | `GET /server-status`, `GET /phpinfo.php`, `TRACE /` | N/A | Apache status, phpinfo, TRACE method detected |
 | `fingerprint` | Technology Fingerprinting | ✅ CONFIRMED | Any endpoint (Server header) | N/A | "Apache/2.4.41" in server-info |
 | `portscan` | Port Scanning | ⚠️ CONFIRMED-NEGATIVE | 127.0.0.1:15789 open | N/A | Module works; finds open port |
@@ -125,8 +125,8 @@ Modules that iterate payload × param × category/variation:
 
 | Status | Count | Modules |
 |--------|-------|---------|
-| ✅ CONFIRMED | 38 | sqli, xss, ssti, cmdi, nosql, ldap_injection, xxe, second_order, lfi, idor, cors, jwt, csrf, mass_assignment, oauth_misconfig, open_redirect, prototype_pollution, ssrf, file_upload, deserialization, cache_poisoning, host_header, http_method, race_condition, request_smuggling, websocket_security, directory, info, graphql, business_logic, headers, ssl, auth, misconfig, fingerprint, zero_day, hpp, dom_xss |
-| ⚠️ CONFIRMED-NEGATIVE / INFRASTRUCTURE | 5 | session_security, portscan, cve_check, subdomain, subdomain_takeover |
+| ✅ CONFIRMED | 39 | sqli, xss, ssti, cmdi, nosql, ldap_injection, xxe, second_order, lfi, idor, cors, jwt, csrf, mass_assignment, oauth_misconfig, open_redirect, prototype_pollution, ssrf, file_upload, deserialization, cache_poisoning, host_header, http_method, race_condition, request_smuggling, websocket_security, directory, info, graphql, business_logic, headers, ssl, auth, session_security, misconfig, fingerprint, zero_day, hpp, dom_xss |
+| ⚠️ CONFIRMED-NEGATIVE / INFRASTRUCTURE | 4 | portscan, cve_check, subdomain, subdomain_takeover |
 | ❌ UNVERIFIED | 0 | None |
 
 **Total: 43 modules**

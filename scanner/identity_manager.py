@@ -531,8 +531,24 @@ class IdentityManager:
             return False
 
         if self._is_stalled:
+            # Stalled: all proxy/IP rotation strategies are exhausted and
+            # requests aren't succeeding.  Apply a flat cooldown (not
+            # exponential — exponential was designed for the first few
+            # identity-switch attempts, not indefinite stall).
+            # Properly update rotation_count / last_rotation so the
+            # max_rotations_per_scan and min_rotation_interval guards work.
             self._state.proxy = ""
-            delay = self._apply_exponential_backoff()
+            delay = self.config.cooldown_after_block * 2
+            logger.info("ANM: Stalled — waiting %.1fs before retrying direct connection", delay)
+            time.sleep(delay)
+            self._state.rotation_count += 1
+            self._state.last_rotation = now
+            self._rotation_history.append({
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "trigger": trigger,
+                "detail": "stalled_direct_backoff",
+                "actions": ["cooldown_{:.1f}s".format(delay)],
+            })
             return True
 
         if self._state.rotation_count > 0:

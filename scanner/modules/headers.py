@@ -97,9 +97,44 @@ _DETECTION = (
 )
 
 
-def _is_session_cookie(name: str, value: str) -> bool:
-    name_lower = name.lower()
-    return any(s in name_lower for s in SESSION_COOKIE_NAMES) or len(value) >= 20
+def _is_session_cookie(cookie) -> bool:
+    name_lower = cookie.name.lower()
+    return any(s in name_lower for s in SESSION_COOKIE_NAMES) or len(cookie.value) >= 20
+
+
+def _parse_set_cookie_flags(resp) -> dict:
+    """Return a dict mapping cookie_name -> {has_httponly, has_samesite, secure}.
+
+    curl_cffi's has_nonstandard_attr('HttpOnly') is unreliable (always True).
+    Parsing the raw Set-Cookie response header is the only reliable approach.
+    """
+    flags: dict = {}
+    # curl_cffi Headers exposes .get_list() for multi-value headers
+    raw_cookies: list[str] = []
+    if hasattr(resp.headers, "get_list"):
+        raw_cookies = resp.headers.get_list("set-cookie")
+    elif hasattr(resp.headers, "getlist"):
+        raw_cookies = resp.headers.getlist("set-cookie")
+    else:
+        # Fallback: single-value merge, split on known cookie separators
+        combined = resp.headers.get("set-cookie", "")
+        if combined:
+            raw_cookies = [combined]
+
+    for raw in raw_cookies:
+        parts = [p.strip() for p in raw.split(";")]
+        if not parts:
+            continue
+        # First part is name=value
+        name_part = parts[0]
+        name = name_part.split("=", 1)[0].strip()
+        attrs_lower = {p.lower().split("=")[0].strip() for p in parts[1:]}
+        flags[name] = {
+            "has_httponly": "httponly" in attrs_lower,
+            "has_samesite": "samesite" in attrs_lower,
+            "secure": "secure" in attrs_lower,
+        }
+    return flags
 
 
 def run(session: ScanSession) -> None:
@@ -203,75 +238,65 @@ def run(session: ScanSession) -> None:
             detection_method=_DETECTION,
         ))
 
-    for cookie_name, cookie_value in resp.cookies.items():
-        if not _is_session_cookie(cookie_name, cookie_value):
+    # Build cookie-flag map from raw Set-Cookie headers (reliable across
+    # curl_cffi versions; has_nonstandard_attr is not trustworthy here).
+    cookie_flags = _parse_set_cookie_flags(resp)
+
+    for cookie in resp.cookies.jar:
+        if not _is_session_cookie(cookie):
             continue
 
-        # Try to get the underlying morsel from the CookieJar for flag inspection
-        morsel = None
-        try:
-            morsel = resp.cookies.jar._cookies.get('', {}).get('/', {}).get(cookie_name)
-            if morsel is None:
-                for domain_cookies in resp.cookies.jar._cookies.values():
-                    for path_cookies in domain_cookies.values():
-                        if cookie_name in path_cookies:
-                            morsel = path_cookies[cookie_name]
-                            break
-        except Exception:
-            pass
+        flags = cookie_flags.get(cookie.name, {})
+        has_httponly = flags.get("has_httponly", False)
+        has_samesite = flags.get("has_samesite", False)
+        # Prefer parsed flag over cookie.secure (curl_cffi may not set it correctly)
+        is_secure = flags.get("secure", cookie.secure)
 
-        domain_val = morsel._rest.get('Domain', '') if morsel else ''
-        path_val = morsel._rest.get('Path', '/') if morsel else '/'
         cookie_detail = (
             "Cookie Name: {}\nCookie Domain: {}\nCookie Path: {}\nValue (truncated): {}..."
-        ).format(cookie_name, domain_val or 'not set', path_val, cookie_value[:20])
+        ).format(cookie.name, cookie.domain or 'not set', cookie.path or '/', cookie.value[:20])
 
         cookie_checks = []
-        # curl_cffi exposes limited cookie flags; check Secure via morsel
-        is_secure = bool(morsel and morsel.get('secure')) if morsel else False
-        is_httponly = bool(morsel and morsel._rest.get('HttpOnly')) if morsel else False
-        is_samesite = bool(morsel and morsel._rest.get('SameSite')) if morsel else False
-
         if session.config.target.startswith("https") and not is_secure:
             cookie_checks.append((
-                "Cookie Missing Secure Flag: {}".format(cookie_name),
+                "Cookie Missing Secure Flag: {}".format(cookie.name),
                 Severity.MEDIUM,
                 "Session cookie '{}' is not marked Secure. It will be transmitted over unencrypted HTTP, exposing it to network sniffing.".format(
-                    cookie_name),
+                    cookie.name),
                 "Add the Secure flag to all session cookies.",
                 "CWE-614",
                 "Add Secure flag when setting '{c}':\n"
                 "PHP: session.cookie_secure = 1\n"
                 "Express: res.cookie('{c}', value, {{ secure: true }})\n"
-                "Django: SESSION_COOKIE_SECURE = True".format(c=cookie_name),
+                "Django: SESSION_COOKIE_SECURE = True".format(c=cookie.name),
             ))
 
-        if not is_httponly:
+        if not has_httponly:
             cookie_checks.append((
-                "Cookie Missing HttpOnly Flag: {}".format(cookie_name),
+                "Cookie Missing HttpOnly Flag: {}".format(cookie.name),
                 Severity.MEDIUM,
                 "Session cookie '{}' is not marked HttpOnly. JavaScript can access this cookie, making it vulnerable to XSS-based session theft.".format(
-                    cookie_name),
+                    cookie.name),
                 "Add the HttpOnly flag to session cookies.",
                 "CWE-1004",
                 "Add HttpOnly flag when setting '{c}':\n"
                 "PHP: session.cookie_httponly = 1\n"
                 "Express: res.cookie('{c}', value, {{ httpOnly: true }})\n"
-                "Django: SESSION_COOKIE_HTTPONLY = True".format(c=cookie_name),
+                "Django: SESSION_COOKIE_HTTPONLY = True".format(c=cookie.name),
             ))
 
-        if not is_samesite:
+        if not has_samesite:
             cookie_checks.append((
-                "Cookie Missing SameSite Attribute: {}".format(cookie_name),
+                "Cookie Missing SameSite Attribute: {}".format(cookie.name),
                 Severity.LOW,
                 "Session cookie '{}' lacks the SameSite attribute, making it susceptible to CSRF attacks.".format(
-                    cookie_name),
+                    cookie.name),
                 "Add 'SameSite=Strict' or 'SameSite=Lax' to cookies.",
                 "CWE-1275",
                 "Add SameSite attribute when setting '{c}':\n"
                 "PHP: session.cookie_samesite = \"Strict\"\n"
                 "Express: res.cookie('{c}', value, {{ sameSite: 'strict' }})\n"
-                "Django: SESSION_COOKIE_SAMESITE = 'Strict'".format(c=cookie_name),
+                "Django: SESSION_COOKIE_SAMESITE = 'Strict'".format(c=cookie.name),
             ))
 
         for title, severity, desc, remed, cwe, dev_fix in cookie_checks:
@@ -285,7 +310,8 @@ def run(session: ScanSession) -> None:
                 module="headers",
                 cwe=cwe,
                 confirmed=True,
-                location="Set-Cookie response header for '{}'".format(cookie_name),
+                location="Set-Cookie response header for '{}'".format(cookie.name),
                 developer_fix=dev_fix,
                 detection_method=_DETECTION,
             ))
+

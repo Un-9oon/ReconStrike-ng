@@ -519,8 +519,11 @@ def main():
         except ImportError:
             logger.error("DAST Proxy requires 'cryptography' package: pip install cryptography")
 
-    if not args.target and not args.sast_dir:
-        logger.error("You must provide either --target (DAST) or --sast-dir (SAST) or both.")
+    if not args.target and not args.sast_dir and not getattr(args, "network_scan", None):
+        logger.error(
+            "You must provide either --target (DAST), --sast-dir (SAST), "
+            "--network-scan (network scan), or a combination."
+        )
         sys.exit(1)
 
     if args.target:
@@ -781,6 +784,7 @@ def main():
 
     if args.network_scan:
         from scanner.network.port_scanner import scan_host, scan_network, parse_port_range
+        from scanner.network.service_fingerprint import fingerprint_host
         if not args.quiet:
             logger.info("=" * 60)
             logger.info("NETWORK SCAN: %s", args.network_scan)
@@ -793,6 +797,12 @@ def main():
             result = scan_host(args.network_scan, ports=ports, speed=args.scan_speed)
             results = [result] if result.is_alive else []
 
+        # Service fingerprinting — banner-grab each open port to identify
+        # service name and version before reporting and CVE lookup.
+        for hr in results:
+            if hr.open_ports:
+                fingerprint_host(hr.ip, hr.open_ports)
+
         if not args.quiet:
             for hr in results:
                 logger.info("Host: %s%s — %d open ports (%.1fs)",
@@ -800,27 +810,72 @@ def main():
                             f" ({hr.hostname})" if hr.hostname else "",
                             len(hr.open_ports), hr.scan_time)
                 for pr in hr.open_ports:
-                    logger.info("  %5d/tcp  %-6s  %s", pr.port, pr.state, pr.service or "unknown")
+                    svc_ver = pr.service or "unknown"
+                    if pr.version:
+                        svc_ver = f"{svc_ver} {pr.version}"
+                    logger.info("  %5d/tcp  %-6s  %s", pr.port, pr.state, svc_ver)
+
+        # CVE/NVD lookup for identified services (optional — skipped silently if
+        # offline or rate-limited; requires network access to NVD API).
+        nvd_api_key = getattr(args, "nvd_api_key", "") or ""
+        try:
+            from scanner.network.nvd_client import NVDClient
+            nvd = NVDClient(api_key=nvd_api_key)
+            for hr in results:
+                for pr in hr.open_ports:
+                    if not pr.service or not pr.version:
+                        continue
+                    try:
+                        cves = nvd.search_by_keyword(f"{pr.service} {pr.version}")
+                        for cve in cves[:5]:  # cap at 5 per service
+                            session.add_finding(Finding(
+                                title=f"CVE {cve.cve_id}: {pr.service} {pr.version} on {hr.ip}:{pr.port}",
+                                severity=Severity.HIGH if cve.cvss_score >= 7.0 else Severity.MEDIUM,
+                                description=cve.description,
+                                evidence=(
+                                    f"Host: {hr.ip}, Port: {pr.port}/tcp, "
+                                    f"Service: {pr.service} {pr.version}\n"
+                                    f"CVSS: {cve.cvss_score} ({cve.cvss_severity})\n"
+                                    f"Vector: {cve.cvss_vector}"
+                                ),
+                                remediation=(
+                                    f"Update {pr.service} to a patched version. "
+                                    f"References: {', '.join(cve.references[:3])}"
+                                ),
+                                url=f"tcp://{hr.ip}:{pr.port}",
+                                module="network_scan",
+                                cwe=", ".join(cve.weaknesses) if cve.weaknesses else "",
+                                confirmed=False,
+                                detection_method=f"NVD CVE lookup for {pr.service} {pr.version}",
+                            ))
+                    except Exception as _cve_exc:
+                        logger.debug("NVD lookup failed for %s %s: %s", pr.service, pr.version, _cve_exc)
+        except ImportError:
+            pass
+        except Exception as _nvd_exc:
+            logger.debug("NVD CVE lookup skipped: %s", _nvd_exc)
 
         HIGH_RISK_PORTS = {21, 23, 445, 1433, 1521, 3306, 3389, 5432, 5900, 6379, 9200, 27017, 2375}
         for hr in results:
             for pr in hr.open_ports:
                 if pr.port in HIGH_RISK_PORTS:
                     svc = pr.service or "unknown"
+                    svc_ver = f"{svc} {pr.version}".strip() if pr.version else svc
                     session.add_finding(Finding(
-                        title=f"High-Risk Service Exposed: {svc} on port {pr.port}",
+                        title=f"High-Risk Service Exposed: {svc_ver} on port {pr.port}",
                         severity=Severity.HIGH,
                         description="Port {} ({}) is open on {}. This service is commonly targeted by attackers.".format(
-                            pr.port, svc, hr.ip),
-                        evidence="Host: {}, Port: {}/tcp, State: {}, Service: {}".format(
-                            hr.ip, pr.port, pr.state, pr.service),
+                            pr.port, svc_ver, hr.ip),
+                        evidence="Host: {}, Port: {}/tcp, State: {}, Service: {}{}".format(
+                            hr.ip, pr.port, pr.state, pr.service,
+                            f" {pr.version}" if pr.version else ""),
                         remediation="1. Verify this service needs to be exposed\n"
                                     "2. Restrict access via firewall rules\n"
                                     "3. Ensure the service is patched and hardened",
                         url="tcp://{}:{}".format(hr.ip, pr.port),
                         module="network_scan",
                         confirmed=True,
-                        detection_method="TCP connect scan with service identification",
+                        detection_method="TCP connect scan with service fingerprinting",
                     ))
 
         if not results:

@@ -210,10 +210,12 @@ def _fingerprint_from_cookies(cookies):
         "csrftoken": "django",
         "wp-settings": "wordpress",
     }
-    for cookie in cookies:
-        name = cookie.name if hasattr(cookie, 'name') else str(cookie)
+    # cookies is a curl_cffi Cookies object; iterate via .jar for real
+    # http.cookiejar.Cookie objects with a .name attribute.
+    jar = getattr(cookies, "jar", cookies)
+    for cookie in jar:
         for prefix, sw in cookie_map.items():
-            if name.startswith(prefix):
+            if cookie.name.startswith(prefix):
                 detected[sw] = ""
     return detected
 
