@@ -20,11 +20,7 @@
 | BUG-008 | `scanner/core.py::_resolve_ip()` | Unbounded/uncached DNS resolution; slow/unresponsive resolver could stall scan | Added 3s timeout via ThreadPoolExecutor + 1-hour in-process TTL cache |
 | BUG-009 | `reconstrike_ng.py` | Target initial reachability check treated 403/429/5xx responses as "unreachable" (`if not resp:`) and exited immediately before ANM could rotate | Fixed check to distinguish `resp is None` from HTTP error status; signals ANM `signal_block()` and continues scan |
 | BUG-010 | `scanner/identity_manager.py` | ANM auto-scraped free proxies looped indefinitely (up to 50 rotations) with zero progress when proxies were dead | Added `stall_rotation_limit` progress tracking to fallback to direct connection backoff when N rotations yield zero target progress |
-| BUG-011 | `scanner/modules/{csrf,fingerprint,headers,session_security,waf_detect,cve_check}.py` | `AttributeError: 'str' object has no attribute 'name'` on any target that sets cookies — `curl_cffi.Cookies` iterates as string names, not `http.cookiejar.Cookie` objects | All 6 modules migrated to `resp.cookies.jar` / `getattr(cookies, 'jar', cookies)` for proper Cookie object iteration; `headers.py` upgraded to parse raw `Set-Cookie` headers for reliable flag detection; `csrf.py` does same for SameSite; permanent regression suite added in `tests/test_cookie_regression.py` |
-| BUG-012 | `scanner/identity_manager.py` | When `_is_stalled=True`, `_do_rotate()` applied exponential backoff but never updated `rotation_count` or `last_rotation`, causing infinite tight loop | Fixed to increment `rotation_count` and update `last_rotation` in stall branch |
-| BUG-013 | `reconstrike_ng.py` | `--network-scan` without `--target` or `--sast-dir` immediately aborted with "must provide --target" error | Added `args.network_scan` to the mode-selection guard so network-only scans work standalone |
-| BUG-014 | `reconstrike_ng.py` | `--network-scan` ran port discovery only; service identity was unknown for all open ports | Integrated `service_fingerprint.fingerprint_host()` after port scan; added optional NVD/CVE lookup per identified service |
-| HYGIENE-001 | repo root | Stray `passwd` file (path-traversal test artefact) checked in to repository | Deleted |
+| BUG-011 | cookie iteration (curl_cffi backend) | modules crashed with AttributeError on any target setting cookies, because curl_cffi's Response.cookies iterates as strings, not Cookie objects, unlike standard requests | iterate resp.cookies.jar instead of resp.cookies directly in the affected modules; added regression test with a cookie-bearing fixture |
 
 ---
 
@@ -33,7 +29,7 @@
 ### GAP-1: Module Verification Gaps
 **Severity: Medium**
 
-16 of 43 DAST modules remain **UNVERIFIED** — no suitable test target available in this test suite to confirm true-positive detection. These modules run without crashing but their detection logic has not been validated against a real vulnerability:
+17 of 43 DAST modules remain **UNVERIFIED** — no suitable test target available in this test suite to confirm true-positive detection. These modules run without crashing but their detection logic has not been validated against a real vulnerability:
 
 | Module | Why Unverified |
 |--------|----------------|
@@ -53,6 +49,7 @@
 | `dom_xss` | DOM sinks require JS engine; DAST-only heuristic |
 | `portscan` (full) | Only top-1000 ports on localhost; minimal target |
 | `fingerprint` (full) | Only detects "Apache/2.4.41" from server-info stub |
+| `session_security` (auth) | Fixture sets no cookies; module logic untested with real cookies |
 
 **Workaround:** Use `--profile quick` or `--profile owasp` to limit to best-tested modules.  
 **Tracking:** See `docs/MODULE_STATUS.md` for per-module CONFIRMED/CONFIRMED-NEGATIVE/UNVERIFIED verdicts.

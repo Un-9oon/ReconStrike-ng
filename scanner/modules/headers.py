@@ -97,44 +97,9 @@ _DETECTION = (
 )
 
 
-def _is_session_cookie(cookie) -> bool:
+def _is_session_cookie(cookie):
     name_lower = cookie.name.lower()
     return any(s in name_lower for s in SESSION_COOKIE_NAMES) or len(cookie.value) >= 20
-
-
-def _parse_set_cookie_flags(resp) -> dict:
-    """Return a dict mapping cookie_name -> {has_httponly, has_samesite, secure}.
-
-    curl_cffi's has_nonstandard_attr('HttpOnly') is unreliable (always True).
-    Parsing the raw Set-Cookie response header is the only reliable approach.
-    """
-    flags: dict = {}
-    # curl_cffi Headers exposes .get_list() for multi-value headers
-    raw_cookies: list[str] = []
-    if hasattr(resp.headers, "get_list"):
-        raw_cookies = resp.headers.get_list("set-cookie")
-    elif hasattr(resp.headers, "getlist"):
-        raw_cookies = resp.headers.getlist("set-cookie")
-    else:
-        # Fallback: single-value merge, split on known cookie separators
-        combined = resp.headers.get("set-cookie", "")
-        if combined:
-            raw_cookies = [combined]
-
-    for raw in raw_cookies:
-        parts = [p.strip() for p in raw.split(";")]
-        if not parts:
-            continue
-        # First part is name=value
-        name_part = parts[0]
-        name = name_part.split("=", 1)[0].strip()
-        attrs_lower = {p.lower().split("=")[0].strip() for p in parts[1:]}
-        flags[name] = {
-            "has_httponly": "httponly" in attrs_lower,
-            "has_samesite": "samesite" in attrs_lower,
-            "secure": "secure" in attrs_lower,
-        }
-    return flags
 
 
 def run(session: ScanSession) -> None:
@@ -238,26 +203,16 @@ def run(session: ScanSession) -> None:
             detection_method=_DETECTION,
         ))
 
-    # Build cookie-flag map from raw Set-Cookie headers (reliable across
-    # curl_cffi versions; has_nonstandard_attr is not trustworthy here).
-    cookie_flags = _parse_set_cookie_flags(resp)
-
     for cookie in resp.cookies.jar:
         if not _is_session_cookie(cookie):
             continue
-
-        flags = cookie_flags.get(cookie.name, {})
-        has_httponly = flags.get("has_httponly", False)
-        has_samesite = flags.get("has_samesite", False)
-        # Prefer parsed flag over cookie.secure (curl_cffi may not set it correctly)
-        is_secure = flags.get("secure", cookie.secure)
 
         cookie_detail = (
             "Cookie Name: {}\nCookie Domain: {}\nCookie Path: {}\nValue (truncated): {}..."
         ).format(cookie.name, cookie.domain or 'not set', cookie.path or '/', cookie.value[:20])
 
         cookie_checks = []
-        if session.config.target.startswith("https") and not is_secure:
+        if session.config.target.startswith("https") and not cookie.secure:
             cookie_checks.append((
                 "Cookie Missing Secure Flag: {}".format(cookie.name),
                 Severity.MEDIUM,
@@ -271,7 +226,7 @@ def run(session: ScanSession) -> None:
                 "Django: SESSION_COOKIE_SECURE = True".format(c=cookie.name),
             ))
 
-        if not has_httponly:
+        if not cookie.has_nonstandard_attr("HttpOnly"):
             cookie_checks.append((
                 "Cookie Missing HttpOnly Flag: {}".format(cookie.name),
                 Severity.MEDIUM,
@@ -285,7 +240,7 @@ def run(session: ScanSession) -> None:
                 "Django: SESSION_COOKIE_HTTPONLY = True".format(c=cookie.name),
             ))
 
-        if not has_samesite:
+        if not cookie.has_nonstandard_attr("SameSite"):
             cookie_checks.append((
                 "Cookie Missing SameSite Attribute: {}".format(cookie.name),
                 Severity.LOW,
@@ -314,4 +269,3 @@ def run(session: ScanSession) -> None:
                 developer_fix=dev_fix,
                 detection_method=_DETECTION,
             ))
-

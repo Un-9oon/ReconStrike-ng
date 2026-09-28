@@ -103,13 +103,7 @@ def _check_headers(resp, header_checks):
 
 
 def _check_cookies(resp, cookie_names):
-    if not hasattr(resp, "cookies") or not resp.cookies:
-        return False
-    # resp.cookies is a curl_cffi Cookies object; iterate via .jar for real
-    # http.cookiejar.Cookie objects that have a .name attribute.
-    jar = getattr(resp.cookies, "jar", resp.cookies)
-    names = [c.name for c in jar]
-    cookie_str = "; ".join(names).lower()
+    cookie_str = "; ".join(c.name for c in resp.cookies.jar).lower()
     return any(name.lower() in cookie_str for name in cookie_names)
 
 

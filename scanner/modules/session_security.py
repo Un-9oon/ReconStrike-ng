@@ -25,10 +25,7 @@ def _calculate_entropy(value: str) -> float:
 
 def _find_session_cookies(cookies) -> list:
     session_cookies = []
-    # cookies may be a curl_cffi Cookies object (iterate via .jar for real
-    # http.cookiejar.Cookie objects) or an already-unwrapped CookieJar.
-    jar = getattr(cookies, "jar", cookies)
-    for cookie in jar:
+    for cookie in cookies:
         name_lower = cookie.name.lower()
         matched = any(known.lower() in name_lower for known in COMMON_SESSION_NAMES)
         if matched or (len(cookie.value) >= 16 and _calculate_entropy(cookie.value) > 3.0):
@@ -42,7 +39,7 @@ def _check_cookie_attributes(session: ScanSession, url: str) -> None:
         return
 
     # Try response cookies first, fall back to session jar
-    session_cookies = _find_session_cookies(resp.cookies) or _find_session_cookies(session.session.cookies)
+    session_cookies = _find_session_cookies(resp.cookies.jar) or _find_session_cookies(session.session.cookies.jar)
     if not session_cookies:
         return
 
@@ -151,7 +148,7 @@ def _check_session_fixation(session: ScanSession, url: str) -> None:
     if not resp:
         return
 
-    session_cookies = _find_session_cookies(resp.cookies) or _find_session_cookies(session.session.cookies)
+    session_cookies = _find_session_cookies(resp.cookies.jar) or _find_session_cookies(session.session.cookies.jar)
     if not session_cookies:
         return
 
@@ -165,10 +162,9 @@ def _check_session_fixation(session: ScanSession, url: str) -> None:
             session.session.cookies.set(cookie.name, original_value, domain=cookie.domain, path=cookie.path or "/")
             continue
 
-        # Check both response and session jar for the cookie value.
-        # resp2.cookies is a curl_cffi Cookies obj — use .jar for real Cookie objects.
+        # Check both response and session jar for the cookie value
         current_value = None
-        for jar in (resp2.cookies.jar, session.session.cookies):
+        for jar in (resp2.cookies.jar, session.session.cookies.jar):
             for c in jar:
                 if c.name == cookie.name:
                     current_value = c.value
@@ -348,8 +344,7 @@ def _check_cookie_scope(session: ScanSession, url: str) -> None:
         return
 
     parsed = urlparse(url)
-    sess_jar = getattr(session.session.cookies, "jar", session.session.cookies)
-    all_cookies = list(resp.cookies.jar) + list(sess_jar)
+    all_cookies = list(resp.cookies.jar) + list(session.session.cookies.jar)
 
     for cookie in all_cookies:
         if not any(known.lower() in cookie.name.lower() for known in COMMON_SESSION_NAMES):
